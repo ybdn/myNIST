@@ -11,6 +11,8 @@ Document de référence pour l'évolution de myNIST : couverture des nouveaux ty
 
 ## 1. Page d'accueil (hub des modes)
 
+Référence détaillée (wireframes + navigation) : `docs/hub_design.md` (issue #1).
+
 - Écran d'accueil avant la fenêtre 3 panneaux : cartes/actions "Visualiser/Éditer un NIST", "Comparer", "Exporter relevé PDF".
 - Bloc "Derniers fichiers" (accès rapide) et bouton "Ouvrir un NIST".
 - Gestion d'état global (fichier courant, historique) + navigation retour au hub.

@@ -46,6 +46,7 @@
 |----------|-------------|------------------|
 | **[docs/developer_guide.md](docs/developer_guide.md)** | Guide pour développeurs | 25 min 🔧 |
 | **[docs/roadmap.md](docs/roadmap.md)** | Feuille de route produit/tech | 7 min 🗺️ |
+| **[docs/hub_design.md](docs/hub_design.md)** | Conception hub d'accueil (wireframes + navigation) | 6 min 🗺️ |
 | **[docs/field_specifications.md](docs/field_specifications.md)** | Spécifications des champs NIST | 15 min 📋 |
 | **[CHANGELOG.md](CHANGELOG.md)** | Historique des versions | 5 min 📝 |
 
@@ -129,45 +130,50 @@
    - Modes (Accueil, Viewer, Comparaison, Export PDF)
    - Phases, risques, livrables
 
-9. **[docs/field_specifications.md](docs/field_specifications.md)**
+9. **[docs/hub_design.md](docs/hub_design.md)**
+   - Hub accueil (cartes, récents, navigation)
+   - Critères d'acceptation
+   - Prochaines étapes Phase 0
+
+10. **[docs/field_specifications.md](docs/field_specifications.md)**
    - Spécifications NIST
    - Champs 2.215, 2.217
    - Standard ANSI/NIST-ITL
 
-10. **[CHANGELOG.md](CHANGELOG.md)**
+11. **[CHANGELOG.md](CHANGELOG.md)**
     - Historique des versions
     - Nouveautés
     - Liens vers releases
 
 ### 📋 Fichiers Techniques
 
-11. **[LICENSE](LICENSE)**
+12. **[LICENSE](LICENSE)**
     - Licence propriétaire
     - Copyright Yoann BAUDRIN
 
-12. **[requirements.txt](requirements.txt)**
+13. **[requirements.txt](requirements.txt)**
     - Dépendances Python
     - Versions requises
 
-13. **[setup.py](setup.py)**
+14. **[setup.py](setup.py)**
     - Configuration du package
     - Installation
 
-14. **[Makefile](Makefile)**
+15. **[Makefile](Makefile)**
     - Commandes automatisées
     - Build, test, clean
 
-15. **[mynist.spec](mynist.spec)**
+16. **[mynist.spec](mynist.spec)**
     - Configuration PyInstaller
     - Build de l'exécutable
 
 ### 🛠️ Scripts
 
-16. **[run.sh](run.sh)**
+17. **[run.sh](run.sh)**
     - Lancement en mode dev
     - Création auto de venv
 
-17. **[build.sh](build.sh)**
+18. **[build.sh](build.sh)**
     - Compilation automatique
     - Build PyInstaller
 
@@ -247,6 +253,7 @@
 
 ### Roadmap / Plan
 - [docs/roadmap.md](docs/roadmap.md) - Feuille de route à jour
+- [docs/hub_design.md](docs/hub_design.md) - Conception hub d'accueil (issue #1)
 - [docs/plan.md](docs/plan.md) - Redirige vers la roadmap
 
 ### Champs NIST
