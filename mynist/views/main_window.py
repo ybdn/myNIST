@@ -19,8 +19,10 @@ from mynist.views.file_panel import FilePanel
 from mynist.views.data_panel import DataPanel
 from mynist.views.image_panel import ImagePanel
 from mynist.views.home_view import HomeView
+from mynist.views.pdf_export_view import PdfExportView
 from mynist.controllers.file_controller import FileController
 from mynist.controllers.export_controller import ExportController
+from mynist.controllers.pdf_controller import PDFController
 from mynist.utils.constants import (
     APP_NAME,
     APP_VERSION,
@@ -43,10 +45,13 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.file_controller = FileController()
         self.export_controller = ExportController()
+        self.pdf_controller = PDFController()
         self.base_title = f"{APP_NAME} - NIST File Viewer"
         self.recent_files = RecentFiles()
         self.active_mode = "home"
         self.last_non_home_mode = "viewer"
+        self.is_modified = False
+        self.last_change = None
         self.init_ui()
 
     def init_ui(self):
@@ -64,8 +69,10 @@ class MainWindow(QMainWindow):
         self.stacked_widget = QStackedWidget()
         self.home_view = HomeView(self)
         self.viewer_page = self._build_viewer_page()
+        self.pdf_view = PdfExportView(self)
         self.stacked_widget.addWidget(self.home_view)
         self.stacked_widget.addWidget(self.viewer_page)
+        self.stacked_widget.addWidget(self.pdf_view)
         self.setCentralWidget(self.stacked_widget)
 
         # Connect HomeView signals
@@ -74,6 +81,9 @@ class MainWindow(QMainWindow):
         self.home_view.mode_requested.connect(self.on_mode_requested)
         self.home_view.clear_recents_requested.connect(self.on_clear_recents)
         self.home_view.resume_requested.connect(self.on_resume_last_mode)
+        self.pdf_view.back_requested.connect(self.switch_to_home)
+        self.pdf_view.browse_requested.connect(self.export_pdf_report)
+        self.pdf_view.export_requested.connect(self.export_pdf_report_with_path)
 
         # Create menu bar
         self.create_menus()
@@ -112,6 +122,7 @@ class MainWindow(QMainWindow):
 
         # Connect signals
         self.file_panel.record_selected.connect(self.on_record_selected)
+        self.data_panel.field_changed.connect(self.on_field_changed)
 
         return container
 
@@ -120,39 +131,55 @@ class MainWindow(QMainWindow):
         menubar = self.menuBar()
 
         # File menu
-        file_menu = menubar.addMenu('&File')
+        file_menu = menubar.addMenu('&Fichier')
 
         # Open action
-        self.open_action = QAction('&Open NIST File...', self)
+        self.open_action = QAction('&Ouvrir un fichier NIST...', self)
         self.open_action.setShortcut('Ctrl+O')
-        self.open_action.setStatusTip('Open a NIST file')
+        self.open_action.setStatusTip('Ouvrir un fichier NIST')
         self.open_action.triggered.connect(self.open_file)
         file_menu.addAction(self.open_action)
 
         # Close action
-        self.close_action = QAction('&Close NIST File', self)
+        self.close_action = QAction('&Fermer le fichier', self)
         self.close_action.setShortcut('Ctrl+W')
-        self.close_action.setStatusTip('Close the current NIST file')
+        self.close_action.setStatusTip('Fermer le fichier NIST courant')
         self.close_action.triggered.connect(self.close_current_file)
         self.close_action.setEnabled(False)
         file_menu.addAction(self.close_action)
+
+        # Save As action
+        self.save_as_action = QAction('Enregistrer &sous...', self)
+        self.save_as_action.setShortcut('Ctrl+Shift+S')
+        self.save_as_action.setStatusTip('Enregistrer le fichier NIST sous un nouveau nom')
+        self.save_as_action.triggered.connect(self.save_file_as)
+        self.save_as_action.setEnabled(False)
+        file_menu.addAction(self.save_as_action)
 
         file_menu.addSeparator()
 
         # Export Signa Multiple action
         self.export_signa_action = QAction('Export &Signa Multiple...', self)
         self.export_signa_action.setShortcut('Ctrl+E')
-        self.export_signa_action.setStatusTip('Export with Signa Multiple modifications')
+        self.export_signa_action.setStatusTip('Exporter avec les modifications Signa Multiple')
         self.export_signa_action.triggered.connect(self.export_signa_multiple)
         self.export_signa_action.setEnabled(False)
         file_menu.addAction(self.export_signa_action)
 
+        # Export PDF décadactylaire
+        self.export_pdf_action = QAction('Exporter relevé &PDF...', self)
+        self.export_pdf_action.setShortcut('Ctrl+P')
+        self.export_pdf_action.setStatusTip('Exporter un relevé décadactylaire PDF')
+        self.export_pdf_action.triggered.connect(self.switch_to_pdf_view)
+        self.export_pdf_action.setEnabled(False)
+        file_menu.addAction(self.export_pdf_action)
+
         file_menu.addSeparator()
 
         # Quit action
-        self.quit_action = QAction('&Quit', self)
+        self.quit_action = QAction('&Quitter', self)
         self.quit_action.setShortcut('Ctrl+Q')
-        self.quit_action.setStatusTip('Quit application')
+        self.quit_action.setStatusTip("Quitter l'application")
         self.quit_action.triggered.connect(self.close)
         file_menu.addAction(self.quit_action)
 
@@ -182,25 +209,23 @@ class MainWindow(QMainWindow):
 
         self.nav_pdf_action = QAction('Aller à l\'export &PDF', self)
         self.nav_pdf_action.setShortcut('Alt+4')
-        self.nav_pdf_action.setStatusTip('Mode export PDF (à venir)')
-        self.nav_pdf_action.triggered.connect(
-            lambda: QMessageBox.information(self, "Export PDF", "Mode export PDF à venir.")
-        )
+        self.nav_pdf_action.setStatusTip('Exporter un relevé PDF')
+        self.nav_pdf_action.triggered.connect(self.switch_to_pdf_view)
         self.nav_pdf_action.setEnabled(False)
         nav_menu.addAction(self.nav_pdf_action)
 
         # Help menu
-        help_menu = menubar.addMenu('&Help')
+        help_menu = menubar.addMenu('&Aide')
 
         # About action
-        self.about_action = QAction('&About', self)
-        self.about_action.setStatusTip('About myNIST')
+        self.about_action = QAction('À &propos', self)
+        self.about_action.setStatusTip('À propos de myNIST')
         self.about_action.triggered.connect(self.show_about)
         help_menu.addAction(self.about_action)
 
         # Export Signa Info action
-        self.info_action = QAction('Export Signa Multiple &Info', self)
-        self.info_action.setStatusTip('Information about Export Signa Multiple')
+        self.info_action = QAction('Informations Export &Signa Multiple', self)
+        self.info_action.setStatusTip('Informations sur Export Signa Multiple')
         self.info_action.triggered.connect(self.show_export_info)
         help_menu.addAction(self.info_action)
 
@@ -224,10 +249,24 @@ class MainWindow(QMainWindow):
         self.resume_action.setEnabled(False)
         toolbar.addAction(self.resume_action)
 
+        self.save_action = QAction('Enregistrer', self)
+        self.save_action.setIcon(self._build_magic_icon())
+        self.save_action.setShortcut('Ctrl+S')
+        self.save_action.triggered.connect(self.save_file_as)
+        self.save_action.setEnabled(False)
+        toolbar.addAction(self.save_action)
+
+        self.undo_action = QAction('Annuler', self)
+        self.undo_action.setShortcut('Ctrl+Z')
+        self.undo_action.triggered.connect(self.undo_last_change)
+        self.undo_action.setEnabled(False)
+        toolbar.addAction(self.undo_action)
+
         # Attach icons
         self.open_action.setIcon(self._build_plus_icon())
         self.close_action.setIcon(self._build_stop_icon())
         self.export_signa_action.setIcon(self._build_magic_icon())
+        self.export_pdf_action.setIcon(self._build_magic_icon())
 
         toolbar.addAction(self.open_action)
         toolbar.addAction(self.close_action)
@@ -295,12 +334,19 @@ class MainWindow(QMainWindow):
         """Enable or disable actions based on whether a file is loaded."""
         self.close_action.setEnabled(file_open)
         self.export_signa_action.setEnabled(file_open)
+        self.export_pdf_action.setEnabled(file_open)
         self.nav_view_action.setEnabled(file_open)
         self.resume_action.setEnabled(file_open)
+        self.save_as_action.setEnabled(file_open)
+        self.save_action.setEnabled(file_open and self.is_modified)
+        self.undo_action.setEnabled(self.last_change is not None)
 
     def close_current_file(self, show_message: bool = True):
         """Close and clear the currently loaded NIST file."""
         if not self.file_controller.is_file_open():
+            return
+
+        if not self._confirm_discard_changes():
             return
 
         self.file_controller.close_file()
@@ -311,6 +357,8 @@ class MainWindow(QMainWindow):
         self.update_actions_state(False)
         self.home_view.set_current_file(None)
         self.switch_to_home()
+        self.is_modified = False
+        self.last_change = None
 
         if show_message:
             self.status_bar.showMessage("Closed current NIST file", 4000)
@@ -321,7 +369,7 @@ class MainWindow(QMainWindow):
             paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
             if paths and self._is_supported_file(paths[0]):
                 event.acceptProposedAction()
-                self.status_bar.showMessage(f"Drop to open: {paths[0]}", 3000)
+                self.status_bar.showMessage(f"Déposez pour ouvrir : {paths[0]}", 3000)
                 return
 
         event.ignore()
@@ -333,27 +381,33 @@ class MainWindow(QMainWindow):
             if paths:
                 file_path = paths[0]
                 if self._is_supported_file(file_path):
+                    if not self._confirm_discard_changes():
+                        event.ignore()
+                        return
                     event.acceptProposedAction()
                     self.load_nist_file(file_path)
                     return
                 else:
                     QMessageBox.warning(
                         self,
-                        "Unsupported file",
-                        "Please drop a NIST file (.nist, .eft, .an2)."
+                        "Fichier non supporté",
+                        "Merci de déposer un fichier NIST (.nist, .nst, .eft, .an2, .int)."
                     )
 
         event.ignore()
 
     def _is_supported_file(self, file_path: str) -> bool:
         """Check if dropped file has a supported NIST extension."""
-        return file_path.lower().endswith(('.nist', '.eft', '.an2'))
+        return file_path.lower().endswith(('.nist', '.nst', '.eft', '.an2', '.int'))
 
     def open_file(self):
         """Open NIST file dialog and load file."""
+        if not self._confirm_discard_changes():
+            return
+
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Open NIST File",
+            "Ouvrir un fichier NIST",
             "",
             NIST_FILE_FILTER
         )
@@ -369,7 +423,7 @@ class MainWindow(QMainWindow):
         Args:
             file_path: Path to NIST file
         """
-        self.status_bar.showMessage(f"Loading {file_path}...")
+        self.status_bar.showMessage(f"Chargement de {file_path}...")
 
         # Open file with controller
         nist_file = self.file_controller.open_file(file_path)
@@ -389,7 +443,7 @@ class MainWindow(QMainWindow):
             self.setWindowTitle(f"{APP_NAME} - {file_path}")
 
             # Update status
-            self.status_bar.showMessage(f"Loaded: {file_path}", 5000)
+            self.status_bar.showMessage(f"Fichier chargé : {file_path}", 5000)
             self.update_actions_state(True)
 
             logger.info(f"Successfully loaded: {file_path}")
@@ -399,17 +453,22 @@ class MainWindow(QMainWindow):
             self.recent_files.add(file_path, last_mode="viewer", summary_types=record_types)
             self.refresh_recent_entries()
             self.home_view.set_current_file(file_path, "viewer")
+            self.pdf_view.set_current_file(file_path)
+            self.is_modified = False
+            self.last_change = None
+            self._refresh_title()
             self.switch_to_viewer()
         else:
             # Show error
+            details = self.file_controller.format_last_error()
             QMessageBox.critical(
                 self,
-                "Error",
-                f"Failed to load NIST file:\n{file_path}\n\nPlease check the file format."
+                "Erreur",
+                f"Impossible de charger le fichier NIST :\n{file_path}\n\n{details}"
             )
-            self.status_bar.showMessage("Failed to load file", 5000)
+            self.status_bar.showMessage("Échec du chargement", 5000)
             self.update_actions_state(self.file_controller.is_file_open())
-            logger.error(f"Failed to load: {file_path}")
+            logger.error(f"Failed to load: {file_path} ({details})")
 
     def on_record_selected(self, record_type: int, idc: int):
         """
@@ -428,7 +487,7 @@ class MainWindow(QMainWindow):
         self.image_panel.display_record(record_type, idc)
 
         # Update status
-        self.status_bar.showMessage(f"Displaying Type-{record_type} record (IDC {idc})")
+        self.status_bar.showMessage(f"Affichage du record Type-{record_type} (IDC {idc})")
 
     def export_signa_multiple(self):
         """Export NIST file with Signa Multiple modifications."""
@@ -436,8 +495,8 @@ class MainWindow(QMainWindow):
         if not self.file_controller.is_file_open():
             QMessageBox.warning(
                 self,
-                "No File",
-                "Please open a NIST file first."
+                "Aucun fichier",
+                "Merci d'ouvrir un fichier NIST avant d'exporter."
             )
             return
 
@@ -450,7 +509,7 @@ class MainWindow(QMainWindow):
         )
 
         if output_path:
-            self.status_bar.showMessage(f"Exporting to {output_path}...")
+            self.status_bar.showMessage(f"Export en cours vers {output_path}...")
 
             # Get current NIST file
             nist_file = self.file_controller.get_current_file()
@@ -461,39 +520,39 @@ class MainWindow(QMainWindow):
             if success:
                 QMessageBox.information(
                     self,
-                    "Success",
-                    f"Successfully exported to:\n{output_path}\n\n"
-                    "Modifications applied:\n"
-                    "- Deleted field 2.215\n"
-                    "- Set field 2.217 = '11707'"
+                    "Export réussi",
+                    f"Export effectué vers :\n{output_path}\n\n"
+                    "Modifications appliquées :\n"
+                    "- Suppression du champ 2.215\n"
+                    "- Champ 2.217 = '11707'"
                 )
-                self.status_bar.showMessage(f"Exported: {output_path}", 5000)
+                self.status_bar.showMessage(f"Exporté : {output_path}", 5000)
                 logger.info(f"Export Signa Multiple successful: {output_path}")
             else:
                 QMessageBox.critical(
                     self,
-                    "Error",
-                    f"Failed to export to:\n{output_path}\n\n"
-                    "Please check the logs for details."
+                    "Erreur",
+                    f"Échec de l'export vers :\n{output_path}\n\n"
+                    "Consultez les logs pour plus de détails."
                 )
-                self.status_bar.showMessage("Export failed", 5000)
+                self.status_bar.showMessage("Export en échec", 5000)
                 logger.error(f"Export Signa Multiple failed: {output_path}")
 
     def show_about(self):
         """Show about dialog."""
         QMessageBox.about(
             self,
-            f"About {APP_NAME}",
+            f"À propos de {APP_NAME}",
             f"<h2>{APP_NAME} {APP_VERSION}</h2>"
-            "<p>A NIST File Viewer and Editor for Ubuntu</p>"
-            "<p>Features:</p>"
+            "<p>Visualiseur/éditeur de fichiers ANSI/NIST-ITL</p>"
+            "<p>Fonctionnalités :</p>"
             "<ul>"
-            "<li>View ANSI/NIST-ITL files</li>"
-            "<li>Display Type-2 alphanumeric data</li>"
-            "<li>Display fingerprint images</li>"
-            "<li>Export Signa Multiple with fixed modifications</li>"
+            "<li>Visualisation des fichiers ANSI/NIST-ITL</li>"
+            "<li>Affichage/édition des données Type-2</li>"
+            "<li>Affichage des images biométriques</li>"
+            "<li>Export Signa Multiple automatisé</li>"
             "</ul>"
-            "<p>Powered by nistitl (Idemia) and PyQt5</p>"
+            "<p>Motorisé par nistitl (Idemia) et PyQt5</p>"
         )
 
     def show_export_info(self):
@@ -502,7 +561,7 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(
             self,
-            "Export Signa Multiple Info",
+            "Informations Export Signa Multiple",
             info_text
         )
 
@@ -513,6 +572,9 @@ class MainWindow(QMainWindow):
         Args:
             event: Close event
         """
+        if not self._confirm_discard_changes():
+            event.ignore()
+            return
         self.close_current_file(show_message=False)
         logger.info("Application closing")
         event.accept()
@@ -541,6 +603,13 @@ class MainWindow(QMainWindow):
         else:
             self.status_bar.showMessage("Viewer", 3000)
 
+    def switch_to_pdf_view(self):
+        """Show PDF export view."""
+        self.active_mode = "pdf"
+        self.last_non_home_mode = "pdf"
+        self.stacked_widget.setCurrentIndex(2)
+        self.status_bar.showMessage("Export PDF", 3000)
+
     def on_open_recent(self, path: str):
         """Handle opening a recent file from HomeView."""
         if not Path(path).exists():
@@ -556,6 +625,9 @@ class MainWindow(QMainWindow):
                 self.refresh_recent_entries()
             return
 
+        if not self._confirm_discard_changes():
+            return
+
         self.load_nist_file(path)
 
     def on_mode_requested(self, mode: str):
@@ -568,7 +640,7 @@ class MainWindow(QMainWindow):
         elif mode == "comparison":
             QMessageBox.information(self, "Comparaison", "Mode comparaison à venir.")
         elif mode == "pdf":
-            QMessageBox.information(self, "Export PDF", "Mode export PDF à venir.")
+            self.switch_to_pdf_view()
 
     def on_resume_last_mode(self):
         """Resume last non-home mode when a file is open."""
@@ -620,3 +692,168 @@ class MainWindow(QMainWindow):
         )
         painter.end()
         return QIcon(pixmap)
+
+    def on_field_changed(self, record_type: int, idc: int, field_key: str, old: str, new: str):
+        """Mark state dirty after an edit in DataPanel."""
+        self.is_modified = True
+        field_num = int(field_key.split(".")[1])
+        self.last_change = {
+            "record_type": record_type,
+            "idc": idc,
+            "field_num": field_num,
+            "old": old,
+            "new": new,
+        }
+        self.undo_action.setEnabled(True)
+        self.save_action.setEnabled(True)
+        self._refresh_title()
+        self.status_bar.showMessage(f"Modifié: {field_key} → {new}", 4000)
+
+    def undo_last_change(self):
+        """Undo the last single change."""
+        if not self.last_change or not self.file_controller.is_file_open():
+            QMessageBox.information(self, "Annuler", "Aucune modification à annuler.")
+            return
+
+        change = self.last_change
+        nist_file = self.file_controller.get_current_file()
+        if not nist_file:
+            return
+
+        record_type = change["record_type"]
+        idc = change["idc"]
+        field_num = change["field_num"]
+        old = change["old"]
+
+        if old == "":
+            nist_file.delete_field(record_type, field_num, idc=idc)
+        else:
+            nist_file.modify_field(record_type, field_num, old, idc=idc)
+
+        # Refresh current view
+        self.data_panel.display_record(record_type, idc)
+        self.is_modified = False
+        self.last_change = None
+        self.undo_action.setEnabled(False)
+        self.save_action.setEnabled(False)
+        self._refresh_title()
+        self.status_bar.showMessage("Dernier changement annulé", 3000)
+
+    def save_file_as(self):
+        """Save current file to a new path."""
+        if not self.file_controller.is_file_open():
+            QMessageBox.information(self, "Aucun fichier", "Ouvrez un fichier avant d'enregistrer.")
+            return
+
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Enregistrer sous",
+            "",
+            NIST_FILE_FILTER
+        )
+        if not output_path:
+            return
+
+        current_file = self.file_controller.get_current_file()
+        if not current_file:
+            return
+
+        success = current_file.export(output_path)
+        if success:
+            self.is_modified = False
+            self.last_change = None
+            self._refresh_title()
+            self.status_bar.showMessage(f"Enregistré: {output_path}", 4000)
+            self.recent_files.add(output_path, last_mode="viewer", summary_types=current_file.get_record_types())
+            self.refresh_recent_entries()
+        else:
+            QMessageBox.critical(self, "Erreur", "Impossible d'enregistrer le fichier.")
+
+    def export_pdf_report(self):
+        """Exporte un relevé PDF décadactylaire."""
+        if not self.file_controller.is_file_open():
+            QMessageBox.information(self, "Aucun fichier", "Ouvrez un fichier avant d'exporter.")
+            return
+
+        output_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exporter le relevé PDF",
+            "",
+            "PDF (*.pdf);;Tous les fichiers (*)"
+        )
+        if not output_path:
+            return
+
+        nist_file = self.file_controller.get_current_file()
+        if not nist_file:
+            return
+
+        self._perform_pdf_export(output_path, nist_file)
+
+    def export_pdf_report_with_path(self, output_path: str):
+        """Exporte vers un chemin fourni (depuis la vue PDF)."""
+        if not output_path:
+            QMessageBox.information(self, "Chemin manquant", "Indiquez un chemin de sortie pour le PDF.")
+            return
+        if not output_path.lower().endswith(".pdf"):
+            output_path = f"{output_path}.pdf"
+
+        if not self.file_controller.is_file_open():
+            QMessageBox.information(self, "Aucun fichier", "Ouvrez un fichier avant d'exporter.")
+            return
+
+        nist_file = self.file_controller.get_current_file()
+        if not nist_file:
+            return
+
+        self._perform_pdf_export(output_path, nist_file)
+
+    def _perform_pdf_export(self, output_path: str, nist_file):
+        """Mutualise l'export PDF et l'affichage de statut."""
+        ok, message = self.pdf_controller.export_dacty_pdf(nist_file, output_path)
+        if ok:
+            QMessageBox.information(
+                self,
+                "PDF exporté",
+                f"Relevé PDF généré :\n{output_path}"
+            )
+            self.status_bar.showMessage(f"PDF exporté : {output_path}", 4000)
+        else:
+            QMessageBox.critical(
+                self,
+                "Erreur PDF",
+                message or "Échec de la génération du PDF."
+            )
+            self.status_bar.showMessage("Échec export PDF", 4000)
+
+    def _confirm_discard_changes(self) -> bool:
+        """Prompt user if there are unsaved changes."""
+        if not self.is_modified:
+            return True
+
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Modifications non sauvegardées")
+        msg.setText("Des modifications Type-2 ne sont pas enregistrées.")
+        save_btn = msg.addButton("Enregistrer", QMessageBox.AcceptRole)
+        discard_btn = msg.addButton("Fermer sans enregistrer", QMessageBox.DestructiveRole)
+        cancel_btn = msg.addButton("Annuler", QMessageBox.RejectRole)
+        msg.setDefaultButton(save_btn)
+        msg.exec_()
+
+        clicked = msg.clickedButton()
+        if clicked == save_btn:
+            self.save_file_as()
+            return not self.is_modified
+        if clicked == discard_btn:
+            return True
+        return False
+
+    def _refresh_title(self):
+        """Update window title with modified marker and file name."""
+        current_path = self.file_controller.current_filepath if self.file_controller else None
+        suffix = " *" if self.is_modified else ""
+        if current_path:
+            self.setWindowTitle(f"{APP_NAME} - {current_path}{suffix}")
+        else:
+            self.setWindowTitle(self.base_title + suffix)

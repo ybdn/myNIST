@@ -24,6 +24,7 @@ Visualiseur/editeur avec interface 3 panneaux pour fichiers ANSI/NIST-ITL. myNIS
 - Interface 3 panneaux (arborescence des records, champs, image biometrie) avec drag & drop de fichiers.
 - Support des records clefs : Type-2 texte, empreintes Type-4/13/14/15, images Type-10/17, autres images (Type-7/8/16/19/20).
 - Export « Signa Multiple » pret a l'emploi : suppression 2.215 et remplacement 2.217 par `11707`.
+- Export relevé PDF décadactylaire (A4) à partir des images disponibles.
 - Aide embarquee (About, info export) et barre d'outils avec icones generes dynamiquement.
 - Affichage des images WSQ si la dependance optionnelle `wsq` est installee (sinon message explicite).
 - Fonctionnement local/offline, sans backend.
@@ -42,6 +43,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 # Optionnel (WSQ) : pip install wsq
+# Optionnel (JPEG2000) : pip install imagecodecs  # ou glymur
 ```
 
 ### Option 2 : binaire PyInstaller (Ubuntu)
@@ -58,7 +60,7 @@ python -m mynist
 # Lancer l'executable
 ./dist/mynist
 ```
-Ensuite ouvrez un fichier `.nist`, `.eft` ou `.an2` via `Fichier > Ouvrir` ou en glisser-deposer sur la fenetre.
+Ensuite ouvrez un fichier `.nist`, `.nst`, `.eft`, `.an2` (ou `.int`) via `Fichier > Ouvrir` ou en glisser-deposer sur la fenetre.
 
 ## Utilisation
 - **Navigation** : panneau gauche = types/IDC, panneau central = champs non vides, panneau droit = image si applicable.
@@ -100,7 +102,7 @@ make lint        # flake8
 make format      # black
 make test-coverage
 ```
-Les tests couvrent les controllers et le modele NIST de base (`tests/`). Ajoutez des fixtures NIST dans `tests/fixtures/` pour des cas d'integration.
+Les tests couvrent les controllers et le modele NIST de base (`tests/`). Des fixtures minimales sont fournies dans `tests/fixtures/` (voir `docs/tests_fixtures.md`) pour tester Type-4/7/9/10/14/15, EFTS/INT et cas tronques; pas besoin du dossier `nist-files/` complet pour lancer `pytest`.
 
 ## Structure du projet
 ```text

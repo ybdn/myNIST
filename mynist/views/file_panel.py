@@ -5,6 +5,7 @@ from PyQt5.QtCore import pyqtSignal
 from typing import Optional
 from mynist.models.nist_file import NISTFile
 from mynist.utils.constants import RECORD_TYPE_NAMES
+from mynist.utils.biometric_labels import describe_biometric_record
 
 
 class FilePanel(QWidget):
@@ -24,13 +25,13 @@ class FilePanel(QWidget):
         layout = QVBoxLayout()
 
         # Title label
-        self.title_label = QLabel("NIST Records")
+        self.title_label = QLabel("Enregistrements NIST")
         self.title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
         layout.addWidget(self.title_label)
 
         # Tree widget
         self.tree_widget = QTreeWidget()
-        self.tree_widget.setHeaderLabel("Record Structure")
+        self.tree_widget.setHeaderLabel("Structure des enregistrements")
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
         layout.addWidget(self.tree_widget)
 
@@ -66,12 +67,13 @@ class FilePanel(QWidget):
 
             # Add child items for each record
             for idc, record in records:
-                if len(records) > 1:
-                    # Multiple records - show IDC
-                    child_item = QTreeWidgetItem([f"IDC {idc}"])
-                else:
-                    # Single record - no need to show IDC
-                    child_item = QTreeWidgetItem(["Record"])
+                descriptor = describe_biometric_record(record_type, record)
+                label = f"IDC {idc}"
+                if descriptor:
+                    label = f"IDC {idc} — {descriptor}"
+                child_item = QTreeWidgetItem([label])
+                if descriptor:
+                    child_item.setToolTip(0, descriptor)
 
                 # Store record info in item data
                 child_item.setData(0, 100, record_type)  # Store type

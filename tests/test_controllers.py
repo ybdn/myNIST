@@ -4,6 +4,7 @@ import pytest
 from mynist.controllers.file_controller import FileController
 from mynist.controllers.export_controller import ExportController
 
+FIXTURE_TRUNC = "tests/fixtures/tronques/Interpol_FABLStemp8865791272998619994.NST-neu.nst"
 
 class TestFileController:
     """Tests for FileController class."""
@@ -36,12 +37,21 @@ class TestFileController:
         controller = FileController()
         result = controller.open_file("/nonexistent/file.nist")
         assert result is None
+        assert controller.last_error is None
 
     def test_get_file_summary_no_file(self):
         """Test get_file_summary when no file open."""
         controller = FileController()
         summary = controller.get_file_summary()
         assert summary == "No file open"
+
+    def test_open_truncated_file_sets_error(self):
+        """Truncated files should fail without crashing and set an error."""
+        controller = FileController()
+        result = controller.open_file(FIXTURE_TRUNC)
+        assert result is None
+        assert controller.last_error
+        assert "NIST_TOO_SHORT" in controller.last_error or "tronqué" in controller.format_last_error()
 
 
 class TestExportController:

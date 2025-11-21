@@ -15,6 +15,7 @@ class FileController:
         """Initialize FileController."""
         self.current_file: Optional[NISTFile] = None
         self.current_filepath: Optional[str] = None
+        self.last_error: Optional[str] = None
 
     def open_file(self, filepath: str) -> Optional[NISTFile]:
         """
@@ -39,14 +40,18 @@ class FileController:
             if nist_file.parse():
                 self.current_file = nist_file
                 self.current_filepath = filepath
+                self.last_error = None
                 logger.info(f"Successfully opened: {filepath}")
                 logger.info(f"Records found: {len(nist_file.records)}")
                 return nist_file
             else:
-                logger.error(f"Failed to parse NIST file: {filepath}")
+                self.last_error = nist_file.last_error
+                logger.error(f"Failed to parse NIST file: {filepath} "
+                             f"({self.last_error})")
                 return None
 
         except Exception as e:
+            self.last_error = str(e)
             logger.error(f"Error opening file: {e}")
             return None
 
@@ -65,6 +70,7 @@ class FileController:
             logger.info(f"Closing file: {self.current_filepath}")
             self.current_file = None
             self.current_filepath = None
+            self.last_error = None
 
     def is_file_open(self) -> bool:
         """
@@ -86,6 +92,20 @@ class FileController:
             return "No file open"
 
         return self.current_file.get_summary()
+
+    def format_last_error(self) -> str:
+        """Return a user-friendly error message based on the last parsing error."""
+        if not self.last_error:
+            return "Please check the file format."
+
+        low = self.last_error.lower()
+        if "nist_too_short" in low:
+            return (
+                "Fichier tronqué ou incomplet (NIST_TOO_SHORT). "
+                "Le fichier semble coupé et ne peut pas être ouvert."
+            )
+
+        return self.last_error
 
     def export_file(self, output_path: str) -> bool:
         """

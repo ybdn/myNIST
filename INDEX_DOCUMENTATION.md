@@ -47,6 +47,8 @@
 | **[docs/developer_guide.md](docs/developer_guide.md)** | Guide pour développeurs | 25 min 🔧 |
 | **[docs/roadmap.md](docs/roadmap.md)** | Feuille de route produit/tech | 7 min 🗺️ |
 | **[docs/hub_design.md](docs/hub_design.md)** | Conception hub d'accueil (wireframes + navigation) | 6 min 🗺️ |
+| **[docs/pdf_template.md](docs/pdf_template.md)** | Gabarit PDF décadactylaire | 3 min 📄 |
+| **[docs/tests_fixtures.md](docs/tests_fixtures.md)** | Inventaire des fixtures de test | 3 min 🧪 |
 | **[docs/field_specifications.md](docs/field_specifications.md)** | Spécifications des champs NIST | 15 min 📋 |
 | **[CHANGELOG.md](CHANGELOG.md)** | Historique des versions | 5 min 📝 |
 
@@ -135,45 +137,49 @@
    - Critères d'acceptation
    - Prochaines étapes Phase 0
 
-10. **[docs/field_specifications.md](docs/field_specifications.md)**
+10. **[docs/tests_fixtures.md](docs/tests_fixtures.md)**
+   - Liste des fixtures de tests
+   - Types couverts et cas tronqués
+
+11. **[docs/field_specifications.md](docs/field_specifications.md)**
    - Spécifications NIST
    - Champs 2.215, 2.217
    - Standard ANSI/NIST-ITL
 
-11. **[CHANGELOG.md](CHANGELOG.md)**
+12. **[CHANGELOG.md](CHANGELOG.md)**
     - Historique des versions
     - Nouveautés
     - Liens vers releases
 
 ### 📋 Fichiers Techniques
 
-12. **[LICENSE](LICENSE)**
+13. **[LICENSE](LICENSE)**
     - Licence propriétaire
     - Copyright Yoann BAUDRIN
 
-13. **[requirements.txt](requirements.txt)**
+14. **[requirements.txt](requirements.txt)**
     - Dépendances Python
     - Versions requises
 
-14. **[setup.py](setup.py)**
+15. **[setup.py](setup.py)**
     - Configuration du package
     - Installation
 
-15. **[Makefile](Makefile)**
+16. **[Makefile](Makefile)**
     - Commandes automatisées
     - Build, test, clean
 
-16. **[mynist.spec](mynist.spec)**
+17. **[mynist.spec](mynist.spec)**
     - Configuration PyInstaller
     - Build de l'exécutable
 
 ### 🛠️ Scripts
 
-17. **[run.sh](run.sh)**
+18. **[run.sh](run.sh)**
     - Lancement en mode dev
     - Création auto de venv
 
-18. **[build.sh](build.sh)**
+19. **[build.sh](build.sh)**
     - Compilation automatique
     - Build PyInstaller
 

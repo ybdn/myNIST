@@ -18,6 +18,7 @@ class NISTFile:
         self.message: Optional[nistitl.Message] = None
         self.records: Dict[Tuple[int, int], Any] = {}
         self.is_parsed = False
+        self.last_error: Optional[str] = None
 
     def parse(self, filepath: Optional[str] = None) -> bool:
         """
@@ -43,9 +44,11 @@ class NISTFile:
             # Extract all records
             self._extract_records()
             self.is_parsed = True
+            self.last_error = None
             return True
 
         except Exception as e:
+            self.last_error = str(e)
             print(f"Error parsing NIST file: {e}")
             self.is_parsed = False
             return False

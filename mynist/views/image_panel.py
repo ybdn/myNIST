@@ -14,6 +14,7 @@ from PIL import Image
 
 from mynist.models.nist_file import NISTFile
 from mynist.utils.constants import IMAGE_TYPES
+from mynist.utils.image_tools import locate_image_payload, exif_transpose, load_jpeg2000_image
 
 
 class ImagePanel(QWidget):
@@ -30,7 +31,7 @@ class ImagePanel(QWidget):
         layout = QVBoxLayout()
 
         # Title label
-        self.title_label = QLabel("Biometric Image")
+        self.title_label = QLabel("Image biométrique")
         self.title_label.setStyleSheet("font-weight: bold; font-size: 12px;")
         layout.addWidget(self.title_label)
 
@@ -44,7 +45,7 @@ class ImagePanel(QWidget):
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
         self.image_label.setMinimumSize(400, 400)
-        self.image_label.setText("No image to display")
+        self.image_label.setText("Aucune image à afficher")
 
         scroll_area.setWidget(self.image_label)
         layout.addWidget(scroll_area)
@@ -73,19 +74,19 @@ class ImagePanel(QWidget):
 
         # Check if this is an image type
         if record_type not in IMAGE_TYPES:
-            self.image_label.setText(f"Type-{record_type} does not contain images")
+            self.image_label.setText(f"Type-{record_type} ne contient pas d'image")
             self.image_label.setPixmap(QPixmap())
             return
 
         if not self.nist_file:
-            self.image_label.setText("No NIST file loaded")
+            self.image_label.setText("Aucun fichier NIST chargé")
             self.image_label.setPixmap(QPixmap())
             return
 
         # Get the record
         key = (record_type, idc)
         if key not in self.nist_file.records:
-            self.image_label.setText("Record not found")
+            self.image_label.setText("Enregistrement introuvable")
             self.image_label.setPixmap(QPixmap())
             return
 
@@ -98,11 +99,11 @@ class ImagePanel(QWidget):
             if image_data:
                 self._display_image(image_data)
             else:
-                self.image_label.setText("Unable to extract image data")
+                self.image_label.setText("Impossible d'extraire l'image")
                 self.image_label.setPixmap(QPixmap())
 
         except Exception as e:
-            self.image_label.setText(f"Error displaying image: {str(e)}")
+            self.image_label.setText(f"Erreur d'affichage de l'image: {str(e)}")
             self.image_label.setPixmap(QPixmap())
 
     def _extract_image_data(self, record) -> Optional[bytes]:
@@ -127,6 +128,14 @@ class ImagePanel(QWidget):
             except:
                 continue
 
+        # BinaryRecord fallback: value may contain the raster data
+        try:
+            raw_value = getattr(record, "value", None)
+            if raw_value and isinstance(raw_value, (bytes, bytearray)):
+                return bytes(raw_value)
+        except Exception:
+            pass
+
         return None
 
     def _display_image(self, image_data: bytes):
@@ -136,40 +145,42 @@ class ImagePanel(QWidget):
         Args:
             image_data: Raw image bytes
         """
-        # Check image format
         if len(image_data) < 10:
-            self.image_label.setText("Image data too short")
+            self.image_label.setText("Données image trop courtes pour être affichées.")
             return
 
-        # Detect format
-        format_name = "Unknown"
-        if image_data[:2] == b'\xff\xd8':
-            format_name = "JPEG"
-        elif image_data[:8] == b'\x89PNG\r\n\x1a\n':
-            format_name = "PNG"
-        elif image_data[:2] in [b'BM', b'BA']:
-            format_name = "BMP"
-        elif image_data[:4] == b'\xff\xa0\xff\xa8':
-            format_name = "WSQ"
+        # Try to locate an image payload, even if nested in a binary record
+        image_data, format_name = locate_image_payload(image_data)
 
         try:
-            # Handle WSQ format (fingerprint compression)
+            # Handle WSQ via dedicated path
             if format_name == "WSQ":
                 self._display_wsq_image(image_data)
                 return
 
-            # Try to load with PIL (handles JPEG, PNG, BMP, etc.)
-            pil_image = Image.open(BytesIO(image_data))
+            # JPEG2000: try to open and offer explicit guidance if plugin missing
+            if format_name == "JPEG2000":
+                pil_image, err = load_jpeg2000_image(image_data)
+                if pil_image is None:
+                    self.image_label.setText(
+                        "Format détecté : JPEG2000\n"
+                        f"Impossible de décoder l'image ({err}).\n"
+                        "Installez 'imagecodecs' ou 'glymur' pour activer JPEG2000."
+                    )
+                    self.image_label.setPixmap(QPixmap())
+                    return
+            else:
+                pil_image = Image.open(BytesIO(image_data))
 
+            pil_image = exif_transpose(pil_image)
             self._set_pixmap_from_pil(pil_image)
+            self.image_label.setToolTip(f"{format_name} — {pil_image.width}x{pil_image.height}px")
 
         except Exception as e:
             self.image_label.setText(
-                f"Error loading {format_name} image\n\n"
-                f"Format detected: {format_name}\n"
-                f"Data size: {len(image_data)} bytes\n"
-                f"Error: {str(e)}\n\n"
-                f"First bytes: {image_data[:20].hex()}"
+                f"Erreur lors du chargement ({format_name})\n"
+                f"Taille des données : {len(image_data)} octets\n"
+                f"Détails : {str(e)}"
             )
             self.image_label.setPixmap(QPixmap())
 
@@ -204,15 +215,15 @@ class ImagePanel(QWidget):
             return
 
         # Nothing worked: show a clear, actionable message
-        extra = "\n- ".join(wsq_errors) if wsq_errors else "No decoder available."
+        extra = "\n- ".join(wsq_errors) if wsq_errors else "Aucun décodeur disponible."
         self.image_label.setText(
-            "Warning: WSQ format detected.\n\n"
-            "This is a WSQ-compressed fingerprint image.\n\n"
-            "Install the wsq library (pip install wsq) or ensure the NBIS "
-            "`dwsq` binary is available to view it.\n\n"
-            f"Image size: {len(wsq_data)} bytes\n"
-            f"Format: WSQ (Wavelet Scalar Quantization)\n\n"
-            f"Details:\n- {extra}"
+            "Attention : format WSQ détecté.\n\n"
+            "Il s'agit d'une image d'empreinte compressée en WSQ.\n\n"
+            "Installez la librairie wsq (pip install wsq) ou assurez-vous que "
+            "le binaire NBIS `dwsq` est disponible pour l'afficher.\n\n"
+            f"Taille de l'image : {len(wsq_data)} octets\n"
+            "Format : WSQ (Wavelet Scalar Quantization)\n\n"
+            f"Détails :\n- {extra}"
         )
         self.image_label.setPixmap(QPixmap())
 
@@ -301,7 +312,7 @@ class ImagePanel(QWidget):
 
     def clear(self):
         """Clear the image panel."""
-        self.image_label.setText("No image to display")
+        self.image_label.setText("Aucune image à afficher")
         self.image_label.setPixmap(QPixmap())
-        self.title_label.setText("Biometric Image")
+        self.title_label.setText("Image biométrique")
         self.nist_file = None

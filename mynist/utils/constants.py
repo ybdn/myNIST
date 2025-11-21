@@ -7,21 +7,21 @@ APP_DESCRIPTION = "NIST File Viewer and Editor"
 
 # NIST Record Types
 RECORD_TYPE_NAMES = {
-    1: "Type-1: Transaction Information",
-    2: "Type-2: User-Defined Descriptive Text",
+    1: "Type-1: Transaction / Header",
+    2: "Type-2: Descriptive Text (user-defined)",
     3: "Type-3: Low-Resolution Grayscale Fingerprint (deprecated)",
     4: "Type-4: High-Resolution Grayscale Fingerprint",
     5: "Type-5: Low-Resolution Binary Fingerprint (deprecated)",
     6: "Type-6: High-Resolution Binary Fingerprint (deprecated)",
-    7: "Type-7: User-Defined Image",
+    7: "Type-7: User-Defined Image (raster)",
     8: "Type-8: Signature Image",
     9: "Type-9: Minutiae Data",
-    10: "Type-10: Facial & SMT Image",
+    10: "Type-10: Facial / SMT Image",
     11: "Type-11: Forensic & Investigative Voice Data (reserved)",
     12: "Type-12: Forensic Dental & Oral Data (reserved)",
-    13: "Type-13: Variable-Resolution Latent Image",
-    14: "Type-14: Variable-Resolution Fingerprint Image",
-    15: "Type-15: Variable-Resolution Palmprint Image",
+    13: "Type-13: Latent Image (variable resolution)",
+    14: "Type-14: Fingerprint Image (variable resolution)",
+    15: "Type-15: Palmprint Image (variable resolution)",
     16: "Type-16: User-Defined Testing Image",
     17: "Type-17: Iris Image",
     18: "Type-18: DNA Data (reserved)",
@@ -54,5 +54,5 @@ DEFAULT_WINDOW_WIDTH = 1400
 DEFAULT_WINDOW_HEIGHT = 800
 PANEL_SIZES = [300, 550, 550]  # Default sizes for 3 panels
 
-# File filters
-NIST_FILE_FILTER = "NIST Files (*.nist *.eft *.an2);;All Files (*)"
+# File filters (extended to .nst/.int as variants)
+NIST_FILE_FILTER = "NIST Files (*.nist *.nst *.eft *.an2 *.int);;All Files (*)"
