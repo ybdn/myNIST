@@ -1,0 +1,23 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=myNIST
+GenericName=NIST File Viewer
+Comment=View and edit ANSI/NIST-ITL biometric files
+Exec=/opt/mynist/mynist
+Icon=/opt/mynist/mynist.png
+Terminal=false
+Categories=Utility;FileTools;Graphics;Science;
+Keywords=NIST;biometric;fingerprint;viewer;forensic;
+StartupWMClass=mynist
+StartupNotify=true
+MimeType=application/x-nist;application/x-eft;application/x-an2;
+Actions=OpenFile;ExportSigna;
+
+[Desktop Action OpenFile]
+Name=Open NIST File
+Exec=/opt/mynist/mynist --open
+
+[Desktop Action ExportSigna]
+Name=Export Signa Multiple
+Exec=/opt/mynist/mynist --export-signa
