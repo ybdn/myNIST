@@ -45,6 +45,7 @@
 | Document | Description | Temps de Lecture |
 |----------|-------------|------------------|
 | **[docs/developer_guide.md](docs/developer_guide.md)** | Guide pour développeurs | 25 min 🔧 |
+| **[docs/roadmap.md](docs/roadmap.md)** | Feuille de route produit/tech | 7 min 🗺️ |
 | **[docs/field_specifications.md](docs/field_specifications.md)** | Spécifications des champs NIST | 15 min 📋 |
 | **[CHANGELOG.md](CHANGELOG.md)** | Historique des versions | 5 min 📝 |
 
@@ -123,45 +124,50 @@
    - Tests unitaires
    - Personnalisation
 
-8. **[docs/field_specifications.md](docs/field_specifications.md)**
+8. **[docs/roadmap.md](docs/roadmap.md)**
+   - Feuille de route à jour
+   - Modes (Accueil, Viewer, Comparaison, Export PDF)
+   - Phases, risques, livrables
+
+9. **[docs/field_specifications.md](docs/field_specifications.md)**
    - Spécifications NIST
    - Champs 2.215, 2.217
    - Standard ANSI/NIST-ITL
 
-9. **[CHANGELOG.md](CHANGELOG.md)**
-   - Historique des versions
-   - Nouveautés
-   - Roadmap
+10. **[CHANGELOG.md](CHANGELOG.md)**
+    - Historique des versions
+    - Nouveautés
+    - Liens vers releases
 
 ### 📋 Fichiers Techniques
 
-10. **[LICENSE](LICENSE)**
+11. **[LICENSE](LICENSE)**
     - Licence propriétaire
     - Copyright Yoann BAUDRIN
 
-11. **[requirements.txt](requirements.txt)**
+12. **[requirements.txt](requirements.txt)**
     - Dépendances Python
     - Versions requises
 
-12. **[setup.py](setup.py)**
+13. **[setup.py](setup.py)**
     - Configuration du package
     - Installation
 
-13. **[Makefile](Makefile)**
+14. **[Makefile](Makefile)**
     - Commandes automatisées
     - Build, test, clean
 
-14. **[mynist.spec](mynist.spec)**
+15. **[mynist.spec](mynist.spec)**
     - Configuration PyInstaller
     - Build de l'exécutable
 
 ### 🛠️ Scripts
 
-15. **[run.sh](run.sh)**
+16. **[run.sh](run.sh)**
     - Lancement en mode dev
     - Création auto de venv
 
-16. **[build.sh](build.sh)**
+17. **[build.sh](build.sh)**
     - Compilation automatique
     - Build PyInstaller
 
@@ -238,6 +244,10 @@
 ### Tests
 - [docs/developer_guide.md](docs/developer_guide.md) - Section "Running Tests"
 - [pytest.ini](pytest.ini) - Configuration tests
+
+### Roadmap / Plan
+- [docs/roadmap.md](docs/roadmap.md) - Feuille de route à jour
+- [docs/plan.md](docs/plan.md) - Redirige vers la roadmap
 
 ### Champs NIST
 - [docs/field_specifications.md](docs/field_specifications.md) - Complet

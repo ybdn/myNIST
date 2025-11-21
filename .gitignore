@@ -47,8 +47,10 @@ Thumbs.db
 htmlcov/
 
 # myNIST specific
-
+*.nist
+*.nst
 test_files/
+nist-files/
 
 # Agents
 .claude/
