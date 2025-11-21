@@ -31,6 +31,7 @@ Vos fichiers NIST contiennent des **images au format WSQ** (Wavelet Scalar Quant
 - ✅ Détecte automatiquement le format WSQ
 - ✅ Affiche un message informatif si bibliothèque WSQ non installée
 - ✅ Décode et affiche les images si bibliothèque WSQ disponible
+- ✅ Utilise automatiquement l'outil NBIS `dwsq` (s'il est présent) pour décoder sans dépendances Python
 
 ---
 
@@ -78,6 +79,11 @@ for fingerprint images used by FBI and law enforcement.
 - ✅ L'image s'affiche directement
 - ✅ Conversion automatique en niveaux de gris
 - ✅ Redimensionnement automatique dans le panneau
+
+### Avec NBIS `dwsq` Installé (sans module Python)
+
+- ✅ Décodage automatique via l'exécutable `dwsq` détecté dans le PATH  
+- ✅ Aucune installation `pip` nécessaire pour lire les empreintes WSQ
 
 ---
 

@@ -1,11 +1,17 @@
 """Image panel - displays fingerprint and biometric images."""
 
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+from typing import Optional
+from io import BytesIO
+
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QScrollArea
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QImage
-from typing import Optional
-from io import BytesIO
 from PIL import Image
+
 from mynist.models.nist_file import NISTFile
 from mynist.utils.constants import IMAGE_TYPES
 
@@ -155,31 +161,7 @@ class ImagePanel(QWidget):
             # Try to load with PIL (handles JPEG, PNG, BMP, etc.)
             pil_image = Image.open(BytesIO(image_data))
 
-            # Convert to RGB if necessary
-            if pil_image.mode != 'RGB':
-                pil_image = pil_image.convert('RGB')
-
-            # Convert PIL Image to QPixmap
-            image_bytes = pil_image.tobytes()
-            qimage = QImage(
-                image_bytes,
-                pil_image.width,
-                pil_image.height,
-                pil_image.width * 3,
-                QImage.Format_RGB888
-            )
-
-            pixmap = QPixmap.fromImage(qimage)
-
-            # Scale image to fit panel while maintaining aspect ratio
-            scaled_pixmap = pixmap.scaled(
-                self.image_label.size(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
-            )
-
-            self.image_label.setPixmap(scaled_pixmap)
-            self.image_label.setText("")  # Clear text
+            self._set_pixmap_from_pil(pil_image)
 
         except Exception as e:
             self.image_label.setText(
@@ -198,53 +180,124 @@ class ImagePanel(QWidget):
         Args:
             wsq_data: WSQ encoded image bytes
         """
-        # Import WSQ plugin (registers decoder with Pillow)
+        wsq_errors = []
+        pil_image: Optional[Image.Image] = None
+
+        # Fallback first: NBIS dwsq (safer than crashing the process)
         try:
-            import wsq
-        except ImportError:
-            self.image_label.setText(
-                "Warning: WSQ format detected.\n\n"
-                "This is a WSQ-compressed fingerprint image.\n\n"
-                "Install the wsq library to view it:\n"
-                "   pip install wsq\n\n"
-                f"Image size: {len(wsq_data)} bytes\n"
-                "Format: WSQ (Wavelet Scalar Quantization)."
-            )
-            self.image_label.setPixmap(QPixmap())
+            pil_image = self._decode_wsq_with_dwsq(wsq_data)
+        except Exception as e:
+            wsq_errors.append(f"dwsq fallback failed: {str(e)}")
+
+        # Primary path when NBIS is unavailable: Pillow plugin (wsq module)
+        if pil_image is None:
+            try:
+                import wsq  # noqa: F401  - registers the Pillow plugin
+                pil_image = Image.open(BytesIO(wsq_data))
+            except ImportError:
+                wsq_errors.append("Python module 'wsq' not installed.")
+            except Exception as e:
+                wsq_errors.append(f"Pillow WSQ decode failed: {str(e)}")
+
+        if pil_image:
+            self._set_pixmap_from_pil(pil_image)
             return
 
-        try:
-            # Pillow will use the wsq plugin registered on import
-            pil_image = Image.open(BytesIO(wsq_data))
-            if pil_image.mode != 'RGB':
-                pil_image = pil_image.convert('RGB')
+        # Nothing worked: show a clear, actionable message
+        extra = "\n- ".join(wsq_errors) if wsq_errors else "No decoder available."
+        self.image_label.setText(
+            "Warning: WSQ format detected.\n\n"
+            "This is a WSQ-compressed fingerprint image.\n\n"
+            "Install the wsq library (pip install wsq) or ensure the NBIS "
+            "`dwsq` binary is available to view it.\n\n"
+            f"Image size: {len(wsq_data)} bytes\n"
+            f"Format: WSQ (Wavelet Scalar Quantization)\n\n"
+            f"Details:\n- {extra}"
+        )
+        self.image_label.setPixmap(QPixmap())
 
-            image_bytes = pil_image.tobytes()
-            qimage = QImage(
-                image_bytes,
-                pil_image.width,
-                pil_image.height,
-                pil_image.width * 3,
-                QImage.Format_RGB888,
+    def _decode_wsq_with_dwsq(self, wsq_data: bytes) -> Optional[Image.Image]:
+        """
+        Decode WSQ data using the NBIS `dwsq` CLI when the Python plugin is unavailable.
+
+        Args:
+            wsq_data: WSQ encoded image bytes
+
+        Returns:
+            PIL Image if decoding succeeded, otherwise None.
+        """
+        dwsq_path = shutil.which("dwsq")
+        if not dwsq_path:
+            return None
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_dir = Path(tmpdir)
+            wsq_file = tmp_dir / "image.wsq"
+            wsq_file.write_bytes(wsq_data)
+
+            result = subprocess.run(
+                [dwsq_path, "raw", str(wsq_file), "-raw_out"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
             )
 
-            pixmap = QPixmap.fromImage(qimage)
-            scaled_pixmap = pixmap.scaled(
-                self.image_label.size(),
-                Qt.KeepAspectRatio,
-                Qt.SmoothTransformation,
-            )
+            if result.returncode != 0:
+                stderr = result.stderr.decode(errors="ignore").strip()
+                raise RuntimeError(stderr or "dwsq command failed")
 
-            self.image_label.setPixmap(scaled_pixmap)
-            self.image_label.setText("")
+            raw_file = wsq_file.with_suffix(".raw")
+            ncm_file = wsq_file.with_suffix(".ncm")
 
-        except Exception as e:
-            self.image_label.setText(
-                "Warning: WSQ decoding failed.\n\n"
-                f"Error: {str(e)}\n"
-                f"Image size: {len(wsq_data)} bytes"
-            )
-            self.image_label.setPixmap(QPixmap())
+            if not raw_file.exists() or not ncm_file.exists():
+                raise FileNotFoundError("dwsq output files not found")
+
+            metadata = self._parse_ncm_metadata(ncm_file.read_text())
+            width = int(metadata.get("PIX_WIDTH", 0))
+            height = int(metadata.get("PIX_HEIGHT", 0))
+            depth = int(metadata.get("PIX_DEPTH", 8))
+
+            if not width or not height:
+                raise ValueError("Invalid WSQ metadata (missing dimensions)")
+
+            raw_bytes = raw_file.read_bytes()
+            mode = "L" if depth <= 8 else "RGB"
+            return Image.frombytes(mode, (width, height), raw_bytes)
+
+    def _parse_ncm_metadata(self, content: str) -> dict:
+        """Parse NBIS .ncm metadata (key value per line)."""
+        metadata = {}
+        for line in content.splitlines():
+            line = line.strip()
+            if not line or " " not in line:
+                continue
+            key, value = line.split(None, 1)
+            metadata[key] = value
+        return metadata
+
+    def _set_pixmap_from_pil(self, pil_image: Image.Image):
+        """Convert a PIL image to QPixmap and display it."""
+        if pil_image.mode != 'RGB':
+            pil_image = pil_image.convert('RGB')
+
+        image_bytes = pil_image.tobytes()
+        qimage = QImage(
+            image_bytes,
+            pil_image.width,
+            pil_image.height,
+            pil_image.width * 3,
+            QImage.Format_RGB888,
+        )
+
+        pixmap = QPixmap.fromImage(qimage)
+        scaled_pixmap = pixmap.scaled(
+            self.image_label.size(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+
+        self.image_label.setPixmap(scaled_pixmap)
+        self.image_label.setText("")
 
     def clear(self):
         """Clear the image panel."""
