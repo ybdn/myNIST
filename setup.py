@@ -18,6 +18,7 @@ setup(
         "nistitl>=0.6",
         "PyQt5>=5.15.0",
         "Pillow>=10.0.0",
+        "wsq>=0.8",
     ],
     entry_points={
         'console_scripts': [

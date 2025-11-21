@@ -198,58 +198,53 @@ class ImagePanel(QWidget):
         Args:
             wsq_data: WSQ encoded image bytes
         """
-        # Try to import WSQ decoder
+        # Import WSQ plugin (registers decoder with Pillow)
         try:
             import wsq
-            # Try to decode WSQ
-            image_array, width, height, ppi, bpp = wsq.decode(wsq_data)
+        except ImportError:
+            self.image_label.setText(
+                "Warning: WSQ format detected.\n\n"
+                "This is a WSQ-compressed fingerprint image.\n\n"
+                "Install the wsq library to view it:\n"
+                "   pip install wsq\n\n"
+                f"Image size: {len(wsq_data)} bytes\n"
+                "Format: WSQ (Wavelet Scalar Quantization)."
+            )
+            self.image_label.setPixmap(QPixmap())
+            return
 
-            # Create PIL Image from numpy array
-            pil_image = Image.fromarray(image_array, mode='L')  # Grayscale
+        try:
+            # Pillow will use the wsq plugin registered on import
+            pil_image = Image.open(BytesIO(wsq_data))
+            if pil_image.mode != 'RGB':
+                pil_image = pil_image.convert('RGB')
 
-            # Convert to RGB for display
-            pil_image = pil_image.convert('RGB')
-
-            # Convert PIL Image to QPixmap
             image_bytes = pil_image.tobytes()
             qimage = QImage(
                 image_bytes,
                 pil_image.width,
                 pil_image.height,
                 pil_image.width * 3,
-                QImage.Format_RGB888
+                QImage.Format_RGB888,
             )
 
             pixmap = QPixmap.fromImage(qimage)
-
-            # Scale image to fit panel
             scaled_pixmap = pixmap.scaled(
                 self.image_label.size(),
                 Qt.KeepAspectRatio,
-                Qt.SmoothTransformation
+                Qt.SmoothTransformation,
             )
 
             self.image_label.setPixmap(scaled_pixmap)
             self.image_label.setText("")
 
-        except ImportError:
-            # WSQ library not installed
-            self.image_label.setText(
-                "⚠️ WSQ Format Detected\n\n"
-                "This is a WSQ compressed fingerprint image.\n\n"
-                "To view WSQ images, install the wsq library:\n"
-                "   pip install wsq\n\n"
-                f"Image size: {len(wsq_data)} bytes\n"
-                "Format: WSQ (Wavelet Scalar Quantization)\n\n"
-                "Note: WSQ is a standard compression format\n"
-                "for fingerprint images used by FBI and law enforcement."
-            )
         except Exception as e:
             self.image_label.setText(
-                f"⚠️ WSQ Format Error\n\n"
-                f"Failed to decode WSQ image:\n{str(e)}\n\n"
+                "Warning: WSQ decoding failed.\n\n"
+                f"Error: {str(e)}\n"
                 f"Image size: {len(wsq_data)} bytes"
             )
+            self.image_label.setPixmap(QPixmap())
 
     def clear(self):
         """Clear the image panel."""

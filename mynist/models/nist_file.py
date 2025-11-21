@@ -217,10 +217,23 @@ class NISTFile:
             record = self.records[key]
             attr_name = f'_{field_num:03d}'
 
-            # Set to None or empty string to remove field
-            if hasattr(record, attr_name):
+            # Remove matching fields directly from the internal list to avoid getattr/hasattr
+            try:
+                original_len = len(record._fields)  # _fields is part of __slots__
+                record._fields = [f for f in record._fields if getattr(f, "tag", None) != field_num]
+                if len(record._fields) < original_len:
+                    return True  # Field removed
+            except Exception as inner_e:
+                print(f"Error pruning field list for {record_type}.{field_num:03d}: {inner_e}")
+                return False
+
+            # If nothing was removed, the field was likely already absent; ensure no stray attr
+            try:
                 delattr(record, attr_name)
+            except Exception:
+                pass
             return True
+
         except Exception as e:
             print(f"Error deleting field {record_type}.{field_num:03d}: {e}")
             return False
