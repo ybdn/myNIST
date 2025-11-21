@@ -9,7 +9,7 @@ Organisation utilisée (A4, 300 DPI) :
 
 Métadonnées affichées : TCN, ORI, Date, Nom (issus du Type-2 quand disponibles).
 
-Formats d’image pris en charge : JPEG/PNG/BMP, JPEG2000 (via Pillow si plugin), WSQ (si `dwsq` NBIS est présent). Sans `dwsq`, les WSQ sont ignorées dans le PDF et un message indique l’absence de décodeur.
+Formats d’image pris en charge : JPEG/PNG/BMP, WSQ et JPEG2000 via `imagecodecs` (`pip install imagecodecs`). Sans `imagecodecs`, ces formats seront ignorés dans le PDF (message explicite).
 
 Exécution :
 - Depuis le hub : carte “Exporter PDF” ouvre la vue export dédiée.
@@ -21,4 +21,4 @@ Tests :
 - `tests/test_image_tools.py` couvre la détection de formats.
 
 Limitations :
-- Si le fichier ne contient que des WSQ et que `dwsq` n’est pas disponible, le PDF sera vide ; installez NBIS/dwsq pour inclure les empreintes WSQ.
+- Si `imagecodecs` n’est pas installé, les images WSQ/JPEG2000 seront ignorées et un message affiché.

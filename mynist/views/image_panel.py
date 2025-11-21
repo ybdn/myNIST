@@ -1,9 +1,5 @@
 """Image panel - displays fingerprint and biometric images."""
 
-import shutil
-import subprocess
-import tempfile
-from pathlib import Path
 from typing import Optional
 from io import BytesIO
 
@@ -14,7 +10,8 @@ from PIL import Image
 
 from mynist.models.nist_file import NISTFile
 from mynist.utils.constants import IMAGE_TYPES
-from mynist.utils.image_tools import locate_image_payload, exif_transpose, load_jpeg2000_image
+from mynist.utils.image_tools import locate_image_payload, exif_transpose
+from mynist.utils.image_codecs import decode_wsq, decode_jpeg2000
 
 
 class ImagePanel(QWidget):
@@ -153,19 +150,26 @@ class ImagePanel(QWidget):
         image_data, format_name = locate_image_payload(image_data)
 
         try:
-            # Handle WSQ via dedicated path
+            # Handle WSQ via imagecodecs
             if format_name == "WSQ":
-                self._display_wsq_image(image_data)
-                return
-
-            # JPEG2000: try to open and offer explicit guidance if plugin missing
-            if format_name == "JPEG2000":
-                pil_image, err = load_jpeg2000_image(image_data)
+                pil_image, err = decode_wsq(image_data)
                 if pil_image is None:
                     self.image_label.setText(
-                        "Format détecté : JPEG2000\n"
-                        f"Impossible de décoder l'image ({err}).\n"
-                        "Installez 'imagecodecs' ou 'glymur' pour activer JPEG2000."
+                        "Format détecté : WSQ (empreinte digitale)\n\n"
+                        f"Impossible de décoder l'image.\n{err}\n\n"
+                        f"Taille des données : {len(image_data)} octets"
+                    )
+                    self.image_label.setPixmap(QPixmap())
+                    return
+
+            # Handle JPEG2000 via imagecodecs
+            elif format_name == "JPEG2000":
+                pil_image, err = decode_jpeg2000(image_data)
+                if pil_image is None:
+                    self.image_label.setText(
+                        "Format détecté : JPEG2000\n\n"
+                        f"Impossible de décoder l'image.\n{err}\n\n"
+                        f"Taille des données : {len(image_data)} octets"
                     )
                     self.image_label.setPixmap(QPixmap())
                     return
@@ -183,108 +187,6 @@ class ImagePanel(QWidget):
                 f"Détails : {str(e)}"
             )
             self.image_label.setPixmap(QPixmap())
-
-    def _display_wsq_image(self, wsq_data: bytes):
-        """
-        Display WSQ format image (fingerprint compression).
-
-        Args:
-            wsq_data: WSQ encoded image bytes
-        """
-        wsq_errors = []
-        pil_image: Optional[Image.Image] = None
-
-        # Fallback first: NBIS dwsq (safer than crashing the process)
-        try:
-            pil_image = self._decode_wsq_with_dwsq(wsq_data)
-        except Exception as e:
-            wsq_errors.append(f"dwsq fallback failed: {str(e)}")
-
-        # Primary path when NBIS is unavailable: Pillow plugin (wsq module)
-        if pil_image is None:
-            try:
-                import wsq  # noqa: F401  - registers the Pillow plugin
-                pil_image = Image.open(BytesIO(wsq_data))
-            except ImportError:
-                wsq_errors.append("Python module 'wsq' not installed.")
-            except Exception as e:
-                wsq_errors.append(f"Pillow WSQ decode failed: {str(e)}")
-
-        if pil_image:
-            self._set_pixmap_from_pil(pil_image)
-            return
-
-        # Nothing worked: show a clear, actionable message
-        extra = "\n- ".join(wsq_errors) if wsq_errors else "Aucun décodeur disponible."
-        self.image_label.setText(
-            "Attention : format WSQ détecté.\n\n"
-            "Il s'agit d'une image d'empreinte compressée en WSQ.\n\n"
-            "Installez la librairie wsq (pip install wsq) ou assurez-vous que "
-            "le binaire NBIS `dwsq` est disponible pour l'afficher.\n\n"
-            f"Taille de l'image : {len(wsq_data)} octets\n"
-            "Format : WSQ (Wavelet Scalar Quantization)\n\n"
-            f"Détails :\n- {extra}"
-        )
-        self.image_label.setPixmap(QPixmap())
-
-    def _decode_wsq_with_dwsq(self, wsq_data: bytes) -> Optional[Image.Image]:
-        """
-        Decode WSQ data using the NBIS `dwsq` CLI when the Python plugin is unavailable.
-
-        Args:
-            wsq_data: WSQ encoded image bytes
-
-        Returns:
-            PIL Image if decoding succeeded, otherwise None.
-        """
-        dwsq_path = shutil.which("dwsq")
-        if not dwsq_path:
-            return None
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            tmp_dir = Path(tmpdir)
-            wsq_file = tmp_dir / "image.wsq"
-            wsq_file.write_bytes(wsq_data)
-
-            result = subprocess.run(
-                [dwsq_path, "raw", str(wsq_file), "-raw_out"],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-
-            if result.returncode != 0:
-                stderr = result.stderr.decode(errors="ignore").strip()
-                raise RuntimeError(stderr or "dwsq command failed")
-
-            raw_file = wsq_file.with_suffix(".raw")
-            ncm_file = wsq_file.with_suffix(".ncm")
-
-            if not raw_file.exists() or not ncm_file.exists():
-                raise FileNotFoundError("dwsq output files not found")
-
-            metadata = self._parse_ncm_metadata(ncm_file.read_text())
-            width = int(metadata.get("PIX_WIDTH", 0))
-            height = int(metadata.get("PIX_HEIGHT", 0))
-            depth = int(metadata.get("PIX_DEPTH", 8))
-
-            if not width or not height:
-                raise ValueError("Invalid WSQ metadata (missing dimensions)")
-
-            raw_bytes = raw_file.read_bytes()
-            mode = "L" if depth <= 8 else "RGB"
-            return Image.frombytes(mode, (width, height), raw_bytes)
-
-    def _parse_ncm_metadata(self, content: str) -> dict:
-        """Parse NBIS .ncm metadata (key value per line)."""
-        metadata = {}
-        for line in content.splitlines():
-            line = line.strip()
-            if not line or " " not in line:
-                continue
-            key, value = line.split(None, 1)
-            metadata[key] = value
-        return metadata
 
     def _set_pixmap_from_pil(self, pil_image: Image.Image):
         """Convert a PIL image to QPixmap and display it."""

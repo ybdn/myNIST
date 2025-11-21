@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-ruler-off" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M6 6l-2 2" />
+  <path d="M3 7l3 3" />
+  <path d="M4 16l6 -6" />
+  <path d="M7 16l3 -3" />
+  <path d="M11 20l2 -2" />
+  <path d="M13 20l6 -6a2.828 2.828 0 0 0 -4 -4l-6 6" />
+  <path d="M16 9l2 2" />
+  <path d="M3 3l18 18" />
+</svg>

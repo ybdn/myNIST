@@ -18,7 +18,7 @@ setup(
         "nistitl>=0.6",
         "PyQt5>=5.15.0",
         "Pillow>=10.0.0",
-        "wsq>=0.8",
+        "imagecodecs>=2024.1.1",
     ],
     entry_points={
         'console_scripts': [
@@ -34,7 +34,7 @@ setup(
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
-        "Operating System :: POSIX :: Linux",
+        "Operating System :: OS Independent",
         "License :: Other/Proprietary License",
     ],
     include_package_data=True,

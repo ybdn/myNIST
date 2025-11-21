@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-ruler-measure" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M4 8l8 8l4 -4l-8 -8z" />
+  <path d="M16 12l4 4l-4 4l-4 -4" />
+  <path d="M4 8l-1.5 1.5" />
+  <path d="M7 11l-1.5 1.5" />
+  <path d="M10 14l-1.5 1.5" />
+  <path d="M13 17l-1.5 1.5" />
+  <path d="M16 20l-1.5 1.5" />
+</svg>

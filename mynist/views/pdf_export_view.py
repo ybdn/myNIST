@@ -67,8 +67,8 @@ class PdfExportView(QWidget):
             "- Main droite : Pouce, Index, Majeur, Annulaire, Auriculaire.<br>"
             "- Simultané : main gauche, pouces, main droite.<br>"
             "- Paumes : gauche, droite.<br><br>"
-            "<b>Formats :</b> WSQ/JPEG/PNG/JPEG2000 pris en charge. "
-            "Pour WSQ, installez le binaire NBIS <code>dwsq</code> (recommandé), sinon les WSQ seront ignorées dans le PDF."
+            "<b>Formats :</b> WSQ/JPEG/PNG/JPEG2000 pris en charge via <code>imagecodecs</code>. "
+            "Installez <code>pip install imagecodecs</code> pour décoder WSQ/JPEG2000."
         )
         layout.addWidget(help_text)
 

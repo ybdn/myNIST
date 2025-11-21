@@ -1,13 +1,13 @@
 """Contrôleur pour l'export PDF décadactylaire (rapport 10 empreintes)."""
 
 from io import BytesIO
-from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
 from mynist.models.nist_file import NISTFile
 from mynist.utils.image_tools import locate_image_payload, exif_transpose, detect_image_format
+from mynist.utils.image_codecs import decode_wsq, decode_jpeg2000
 
 
 class PDFController:
@@ -187,15 +187,13 @@ class PDFController:
         payload, fmt = locate_image_payload(data)
 
         if fmt == "WSQ":
-            img = self._decode_wsq(payload)
+            img, _ = decode_wsq(payload)
             if img:
                 return img, fmt
             return None, fmt
 
         if fmt == "JPEG2000":
-            from mynist.utils.image_tools import load_jpeg2000_image
-
-            img, _ = load_jpeg2000_image(payload)
+            img, _ = decode_jpeg2000(payload)
             if img:
                 return exif_transpose(img), fmt
             return None, fmt
@@ -245,64 +243,6 @@ class PDFController:
             # IDC 0 -> gauche, IDC 1 -> droite en fallback rudimentaire
             return "LG_DIVERS" if idc == 0 else "RD_DIVERS"
         return ""
-
-        if fmt == "JPEG2000":
-            from mynist.utils.image_tools import load_jpeg2000_image
-
-            img, _ = load_jpeg2000_image(payload)
-            if img:
-                return exif_transpose(img), fmt
-            return None, fmt
-
-        try:
-            img = Image.open(BytesIO(payload))
-            img = exif_transpose(img)
-            return img, detect_image_format(payload)
-        except Exception:
-            return None, fmt
-
-    def _decode_wsq(self, wsq_data: bytes) -> Optional[Image.Image]:
-        """Decode WSQ using external NBIS dwsq if disponible, sinon None."""
-        import shutil
-        import subprocess
-        import tempfile
-
-        dwsq = shutil.which("dwsq")
-        if not dwsq:
-            return None
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            wsq_file = Path(tmpdir) / "img.wsq"
-            raw_file = wsq_file.with_suffix(".raw")
-            ncm_file = wsq_file.with_suffix(".ncm")
-            wsq_file.write_bytes(wsq_data)
-
-            cmd = [dwsq, "raw", str(wsq_file), "-raw_out"]
-            result = subprocess.run(cmd, capture_output=True)
-            if result.returncode != 0:
-                return None
-
-            if not raw_file.exists() or not ncm_file.exists():
-                return None
-
-            meta = {}
-            for line in ncm_file.read_text().splitlines():
-                if " " in line:
-                    k, v = line.split(None, 1)
-                    meta[k] = v
-
-            try:
-                w = int(meta.get("PIX_WIDTH", 0))
-                h = int(meta.get("PIX_HEIGHT", 0))
-                depth = int(meta.get("PIX_DEPTH", 8))
-            except Exception:
-                return None
-            if not w or not h:
-                return None
-
-            mode = "L" if depth <= 8 else "RGB"
-            raw = raw_file.read_bytes()
-            return Image.frombytes(mode, (w, h), raw)
 
     def _first(self, record, candidates) -> Optional[str]:
         for name in candidates:

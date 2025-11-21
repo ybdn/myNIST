@@ -72,7 +72,7 @@ Référence détaillée (wireframes + navigation) : `docs/hub_design.md` (issue 
 
 ## 4. Dépendances et risques
 
-- Décodeurs image : WSQ (module `wsq` ou NBIS), éventuel support JPEG2000 si présent dans les fichiers.
+- Décodeurs image : `imagecodecs` (WSQ/JPEG2000 recommandé), éventuel support JPEG2000 si présent dans les fichiers.
 - Qualité des fixtures nécessaires pour valider Type-1/4/7/10, PDF, comparaison.
 - Ergonomie édition : éviter les erreurs silencieuses, besoin de validation stricte pour les champs critiques.
 
@@ -124,9 +124,9 @@ Attendus QA :
 
 ## 9. Technologies et dépendances à prévoir
 
-- **Parsing NIST** : `nistitl` (existant); dépendance optionnelle `wsq` (Pillow plugin) ou NBIS `dwsq` pour WSQ; garder messages explicites en absence.
+- **Parsing NIST** : `nistitl` (existant); dépendance optionnelle `imagecodecs` pour WSQ/JPEG2000 (préférée car cross-platform); garder messages explicites en absence.
 - **GUI Qt** : PyQt5 (existant). Navigation par QStackedWidget. Comparaison/annotations via QGraphicsView/Scene (zoom/pan, couches de points, resample/calibrate = transformation affine + reset).
-- **Images** : Pillow (existant) ; support JPEG2000 si nécessaire via `imagecodecs` ou `glymur` (optionnel) ; EXIF/rotation sur JPEG/PNG.
+- **Images** : Pillow (existant) ; support JPEG2000/WSQ via `imagecodecs` (recommandé) ; EXIF/rotation sur JPEG/PNG.
 - **PDF** : ReportLab conseillé pour le relevé décadactylaire (gabarit A4, unités physiques) ; alternative Qt QPdfWriter. Rasterisation PDF (pour comparaison) possible via `PyMuPDF` (`fitz`) ou `pdf2image` + poppler.
 - **Tests** : `pytest`, `pytest-qt` (existant), option `pytest-cov` pour couverture; tests “oracle” dimensionnels plutôt que pixel-perfect pour images/PDF.
 - **Build** : PyInstaller (existant) ; option `pip-tools` ou `python -m build` pour gérer/verrouiller les deps.
@@ -134,6 +134,6 @@ Attendus QA :
 ## 10. Actions immédiates proposées
 
 1. Sélectionner un sous-ensemble de `nist-files/` à copier en `tests/fixtures/` (un par type/famille + les 2 tronqués).
-2. Créer les issues listées (sections 6 et resample/calibrate) + ajouter l’issue “ajout dépendances optionnelles” (wsq/JPEG2000/ReportLab/PyMuPDF).
+2. Créer les issues listées (sections 6 et resample/calibrate) + ajouter l’issue “ajout dépendances optionnelles” (`imagecodecs` pour WSQ/JPEG2000, ReportLab/PyMuPDF).
 3. Mettre à jour `requirements.txt`/`README` avec les dépendances optionnelles (WSQ, PDF) et leurs usages.
 4. Sketcher le hub (home_view) et la vue comparaison (points + resample/calibrate) avant dev.

@@ -20,6 +20,7 @@ from mynist.views.data_panel import DataPanel
 from mynist.views.image_panel import ImagePanel
 from mynist.views.home_view import HomeView
 from mynist.views.pdf_export_view import PdfExportView
+from mynist.views.comparison_view import ComparisonView
 from mynist.controllers.file_controller import FileController
 from mynist.controllers.export_controller import ExportController
 from mynist.controllers.pdf_controller import PDFController
@@ -70,9 +71,11 @@ class MainWindow(QMainWindow):
         self.home_view = HomeView(self)
         self.viewer_page = self._build_viewer_page()
         self.pdf_view = PdfExportView(self)
-        self.stacked_widget.addWidget(self.home_view)
-        self.stacked_widget.addWidget(self.viewer_page)
-        self.stacked_widget.addWidget(self.pdf_view)
+        self.comparison_view = ComparisonView(self)
+        self.stacked_widget.addWidget(self.home_view)       # index 0
+        self.stacked_widget.addWidget(self.viewer_page)     # index 1
+        self.stacked_widget.addWidget(self.pdf_view)        # index 2
+        self.stacked_widget.addWidget(self.comparison_view) # index 3
         self.setCentralWidget(self.stacked_widget)
 
         # Connect HomeView signals
@@ -88,7 +91,7 @@ class MainWindow(QMainWindow):
         # Create menu bar
         self.create_menus()
 
-        # Quick action toolbar
+        # Quick action toolbar (cachée)
         self.create_toolbar()
 
         # Create status bar
@@ -200,11 +203,9 @@ class MainWindow(QMainWindow):
 
         self.nav_compare_action = QAction('Aller à la &comparaison', self)
         self.nav_compare_action.setShortcut('Alt+3')
-        self.nav_compare_action.setStatusTip('Mode comparaison (à venir)')
-        self.nav_compare_action.triggered.connect(
-            lambda: QMessageBox.information(self, "Comparaison", "Mode comparaison à venir.")
-        )
-        self.nav_compare_action.setEnabled(False)
+        self.nav_compare_action.setStatusTip('Afficher la vue comparaison')
+        self.nav_compare_action.triggered.connect(self.switch_to_comparison)
+        self.nav_compare_action.setEnabled(True)
         nav_menu.addAction(self.nav_compare_action)
 
         self.nav_pdf_action = QAction('Aller à l\'export &PDF', self)
@@ -236,6 +237,7 @@ class MainWindow(QMainWindow):
         toolbar.setFloatable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         toolbar.setIconSize(QSize(20, 20))
+        toolbar.setVisible(False)  # toolbar masquée pour ne pas occuper l'UI
 
         # Navigation
         self.home_action = QAction('Hub', self)
@@ -340,6 +342,7 @@ class MainWindow(QMainWindow):
         self.save_as_action.setEnabled(file_open)
         self.save_action.setEnabled(file_open and self.is_modified)
         self.undo_action.setEnabled(self.last_change is not None)
+        self.nav_compare_action.setEnabled(True)
 
     def close_current_file(self, show_message: bool = True):
         """Close and clear the currently loaded NIST file."""
@@ -610,6 +613,13 @@ class MainWindow(QMainWindow):
         self.stacked_widget.setCurrentIndex(2)
         self.status_bar.showMessage("Export PDF", 3000)
 
+    def switch_to_comparison(self):
+        """Show comparison view."""
+        self.active_mode = "comparison"
+        self.last_non_home_mode = "comparison"
+        self.stacked_widget.setCurrentIndex(3)
+        self.status_bar.showMessage("Comparaison", 3000)
+
     def on_open_recent(self, path: str):
         """Handle opening a recent file from HomeView."""
         if not Path(path).exists():
@@ -638,7 +648,7 @@ class MainWindow(QMainWindow):
             else:
                 self.open_file()
         elif mode == "comparison":
-            QMessageBox.information(self, "Comparaison", "Mode comparaison à venir.")
+            self.switch_to_comparison()
         elif mode == "pdf":
             self.switch_to_pdf_view()
 

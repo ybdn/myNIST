@@ -74,11 +74,8 @@ def load_jpeg2000_image(data: bytes) -> Tuple[Optional[Image.Image], str]:
     """
     Try to load JPEG2000; return (image, error_message).
     error_message is empty string on success.
+
+    Utilise imagecodecs pour le décodage.
     """
-    try:
-        img = Image.open(io.BytesIO(data))
-        return img, ""
-    except ModuleNotFoundError:
-        return None, "Plugin manquant pour JPEG2000. Installez 'imagecodecs' ou 'glymur'."
-    except Exception as exc:  # pragma: no cover - bubble message
-        return None, str(exc)
+    from mynist.utils.image_codecs import decode_jpeg2000
+    return decode_jpeg2000(data)
