@@ -49,6 +49,7 @@ htmlcov/
 # myNIST specific
 *.nist
 test_files/
+nist-files/
 
 # Agents
 .claude/

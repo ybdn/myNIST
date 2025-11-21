@@ -2,9 +2,9 @@
 
 from pathlib import Path
 from PyQt5.QtWidgets import (QMainWindow, QSplitter, QFileDialog, QMessageBox,
-                              QAction, QStatusBar)
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
+                              QAction, QStatusBar, QToolBar)
+from PyQt5.QtCore import Qt, QSize
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
 from mynist.views.file_panel import FilePanel
 from mynist.views.data_panel import DataPanel
 from mynist.views.image_panel import ImagePanel
@@ -25,12 +25,14 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.file_controller = FileController()
         self.export_controller = ExportController()
+        self.base_title = f"{APP_NAME} - NIST File Viewer"
         self.init_ui()
 
     def init_ui(self):
         """Initialize user interface."""
-        self.setWindowTitle(f"{APP_NAME} - NIST File Viewer")
+        self.setWindowTitle(self.base_title)
         self.setGeometry(100, 100, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT)
+        self.setAcceptDrops(True)
 
         # Set application icon
         icon_path = Path(__file__).parent.parent / 'resources' / 'icons' / 'mynist.png'
@@ -62,10 +64,14 @@ class MainWindow(QMainWindow):
         # Create menu bar
         self.create_menus()
 
+        # Quick action toolbar
+        self.create_toolbar()
+
         # Create status bar
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
         self.status_bar.showMessage("Ready")
+        self.update_actions_state(False)
 
     def create_menus(self):
         """Create application menus."""
@@ -75,44 +81,182 @@ class MainWindow(QMainWindow):
         file_menu = menubar.addMenu('&File')
 
         # Open action
-        open_action = QAction('&Open NIST File...', self)
-        open_action.setShortcut('Ctrl+O')
-        open_action.setStatusTip('Open a NIST file')
-        open_action.triggered.connect(self.open_file)
-        file_menu.addAction(open_action)
+        self.open_action = QAction('&Open NIST File...', self)
+        self.open_action.setShortcut('Ctrl+O')
+        self.open_action.setStatusTip('Open a NIST file')
+        self.open_action.triggered.connect(self.open_file)
+        file_menu.addAction(self.open_action)
+
+        # Close action
+        self.close_action = QAction('&Close NIST File', self)
+        self.close_action.setShortcut('Ctrl+W')
+        self.close_action.setStatusTip('Close the current NIST file')
+        self.close_action.triggered.connect(self.close_current_file)
+        self.close_action.setEnabled(False)
+        file_menu.addAction(self.close_action)
 
         file_menu.addSeparator()
 
         # Export Signa Multiple action
-        export_signa_action = QAction('Export &Signa Multiple...', self)
-        export_signa_action.setShortcut('Ctrl+E')
-        export_signa_action.setStatusTip('Export with Signa Multiple modifications')
-        export_signa_action.triggered.connect(self.export_signa_multiple)
-        file_menu.addAction(export_signa_action)
+        self.export_signa_action = QAction('Export &Signa Multiple...', self)
+        self.export_signa_action.setShortcut('Ctrl+E')
+        self.export_signa_action.setStatusTip('Export with Signa Multiple modifications')
+        self.export_signa_action.triggered.connect(self.export_signa_multiple)
+        self.export_signa_action.setEnabled(False)
+        file_menu.addAction(self.export_signa_action)
 
         file_menu.addSeparator()
 
         # Quit action
-        quit_action = QAction('&Quit', self)
-        quit_action.setShortcut('Ctrl+Q')
-        quit_action.setStatusTip('Quit application')
-        quit_action.triggered.connect(self.close)
-        file_menu.addAction(quit_action)
+        self.quit_action = QAction('&Quit', self)
+        self.quit_action.setShortcut('Ctrl+Q')
+        self.quit_action.setStatusTip('Quit application')
+        self.quit_action.triggered.connect(self.close)
+        file_menu.addAction(self.quit_action)
 
         # Help menu
         help_menu = menubar.addMenu('&Help')
 
         # About action
-        about_action = QAction('&About', self)
-        about_action.setStatusTip('About myNIST')
-        about_action.triggered.connect(self.show_about)
-        help_menu.addAction(about_action)
+        self.about_action = QAction('&About', self)
+        self.about_action.setStatusTip('About myNIST')
+        self.about_action.triggered.connect(self.show_about)
+        help_menu.addAction(self.about_action)
 
         # Export Signa Info action
-        info_action = QAction('Export Signa Multiple &Info', self)
-        info_action.setStatusTip('Information about Export Signa Multiple')
-        info_action.triggered.connect(self.show_export_info)
-        help_menu.addAction(info_action)
+        self.info_action = QAction('Export Signa Multiple &Info', self)
+        self.info_action.setStatusTip('Information about Export Signa Multiple')
+        self.info_action.triggered.connect(self.show_export_info)
+        help_menu.addAction(self.info_action)
+
+    def create_toolbar(self):
+        """Create quick action toolbar with icons."""
+        toolbar = QToolBar("Quick Actions", self)
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        toolbar.setIconSize(QSize(20, 20))
+
+        # Attach icons
+        self.open_action.setIcon(self._build_plus_icon())
+        self.close_action.setIcon(self._build_stop_icon())
+        self.export_signa_action.setIcon(self._build_magic_icon())
+
+        toolbar.addAction(self.open_action)
+        toolbar.addAction(self.close_action)
+        toolbar.addAction(self.export_signa_action)
+
+        self.addToolBar(toolbar)
+
+    def _build_plus_icon(self) -> QIcon:
+        """Create a simple green plus icon."""
+        size = 28
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(QPen(QColor("#2b8a3e"), 4))
+
+        mid = size // 2
+        offset = 7
+        painter.drawLine(mid, offset, mid, size - offset)
+        painter.drawLine(offset, mid, size - offset, mid)
+
+        painter.end()
+        return QIcon(pixmap)
+
+    def _build_stop_icon(self) -> QIcon:
+        """Create a red square stop icon."""
+        size = 28
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.fillRect(6, 6, size - 12, size - 12, QColor("#c92a2a"))
+        painter.setPen(QPen(QColor("#7c2a2a"), 2))
+        painter.drawRect(6, 6, size - 12, size - 12)
+        painter.end()
+        return QIcon(pixmap)
+
+    def _build_magic_icon(self) -> QIcon:
+        """Create a small magic-wand icon."""
+        size = 28
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Wand handle
+        painter.setPen(QPen(QColor("#364fc7"), 3))
+        painter.drawLine(8, size - 8, size - 10, 10)
+
+        # Sparkles
+        painter.setPen(QPen(QColor("#f59f00"), 2))
+        center = 10
+        painter.drawLine(center, center - 6, center, center + 6)
+        painter.drawLine(center - 6, center, center + 6, center)
+        painter.drawLine(center - 4, center - 4, center + 4, center + 4)
+        painter.drawLine(center - 4, center + 4, center + 4, center - 4)
+
+        painter.end()
+        return QIcon(pixmap)
+
+    def update_actions_state(self, file_open: bool):
+        """Enable or disable actions based on whether a file is loaded."""
+        self.close_action.setEnabled(file_open)
+        self.export_signa_action.setEnabled(file_open)
+
+    def close_current_file(self, show_message: bool = True):
+        """Close and clear the currently loaded NIST file."""
+        if not self.file_controller.is_file_open():
+            return
+
+        self.file_controller.close_file()
+        self.file_panel.clear()
+        self.data_panel.clear()
+        self.image_panel.clear()
+        self.setWindowTitle(self.base_title)
+        self.update_actions_state(False)
+
+        if show_message:
+            self.status_bar.showMessage("Closed current NIST file", 4000)
+
+    def dragEnterEvent(self, event):
+        """Accept drag if it contains a supported local file."""
+        if event.mimeData().hasUrls():
+            paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+            if paths and self._is_supported_file(paths[0]):
+                event.acceptProposedAction()
+                self.status_bar.showMessage(f"Drop to open: {paths[0]}", 3000)
+                return
+
+        event.ignore()
+
+    def dropEvent(self, event):
+        """Load a NIST file dropped onto the window."""
+        if event.mimeData().hasUrls():
+            paths = [url.toLocalFile() for url in event.mimeData().urls() if url.isLocalFile()]
+            if paths:
+                file_path = paths[0]
+                if self._is_supported_file(file_path):
+                    event.acceptProposedAction()
+                    self.load_nist_file(file_path)
+                    return
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Unsupported file",
+                        "Please drop a NIST file (.nist, .eft, .an2)."
+                    )
+
+        event.ignore()
+
+    def _is_supported_file(self, file_path: str) -> bool:
+        """Check if dropped file has a supported NIST extension."""
+        return file_path.lower().endswith(('.nist', '.eft', '.an2'))
 
     def open_file(self):
         """Open NIST file dialog and load file."""
@@ -140,6 +284,11 @@ class MainWindow(QMainWindow):
         nist_file = self.file_controller.open_file(file_path)
 
         if nist_file:
+            # Clear previous views before loading new content
+            self.file_panel.clear()
+            self.data_panel.clear()
+            self.image_panel.clear()
+
             # Load into panels
             self.file_panel.load_nist_file(nist_file)
             self.data_panel.load_nist_file(nist_file)
@@ -150,6 +299,7 @@ class MainWindow(QMainWindow):
 
             # Update status
             self.status_bar.showMessage(f"Loaded: {file_path}", 5000)
+            self.update_actions_state(True)
 
             logger.info(f"Successfully loaded: {file_path}")
         else:
@@ -160,6 +310,7 @@ class MainWindow(QMainWindow):
                 f"Failed to load NIST file:\n{file_path}\n\nPlease check the file format."
             )
             self.status_bar.showMessage("Failed to load file", 5000)
+            self.update_actions_state(self.file_controller.is_file_open())
             logger.error(f"Failed to load: {file_path}")
 
     def on_record_selected(self, record_type: int, idc: int):
@@ -264,5 +415,6 @@ class MainWindow(QMainWindow):
         Args:
             event: Close event
         """
+        self.close_current_file(show_message=False)
         logger.info("Application closing")
         event.accept()

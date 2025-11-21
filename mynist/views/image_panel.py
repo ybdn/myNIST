@@ -110,7 +110,8 @@ class ImagePanel(QWidget):
             Image data as bytes or None
         """
         # Try different attributes that might contain image data
-        image_attrs = ['DATA', 'data', '_999', 'image', 'Image']
+        # For Type-14 and Type-15, image data is in field 999
+        image_attrs = ['_999', '_009', 'DATA', 'data', 'image', 'Image', 'BDB']
 
         for attr in image_attrs:
             try:
@@ -129,8 +130,29 @@ class ImagePanel(QWidget):
         Args:
             image_data: Raw image bytes
         """
+        # Check image format
+        if len(image_data) < 10:
+            self.image_label.setText("Image data too short")
+            return
+
+        # Detect format
+        format_name = "Unknown"
+        if image_data[:2] == b'\xff\xd8':
+            format_name = "JPEG"
+        elif image_data[:8] == b'\x89PNG\r\n\x1a\n':
+            format_name = "PNG"
+        elif image_data[:2] in [b'BM', b'BA']:
+            format_name = "BMP"
+        elif image_data[:4] == b'\xff\xa0\xff\xa8':
+            format_name = "WSQ"
+
         try:
-            # Try to load with PIL first (handles many formats)
+            # Handle WSQ format (fingerprint compression)
+            if format_name == "WSQ":
+                self._display_wsq_image(image_data)
+                return
+
+            # Try to load with PIL (handles JPEG, PNG, BMP, etc.)
             pil_image = Image.open(BytesIO(image_data))
 
             # Convert to RGB if necessary
@@ -160,8 +182,74 @@ class ImagePanel(QWidget):
             self.image_label.setText("")  # Clear text
 
         except Exception as e:
-            self.image_label.setText(f"Error loading image: {str(e)}")
+            self.image_label.setText(
+                f"Error loading {format_name} image\n\n"
+                f"Format detected: {format_name}\n"
+                f"Data size: {len(image_data)} bytes\n"
+                f"Error: {str(e)}\n\n"
+                f"First bytes: {image_data[:20].hex()}"
+            )
             self.image_label.setPixmap(QPixmap())
+
+    def _display_wsq_image(self, wsq_data: bytes):
+        """
+        Display WSQ format image (fingerprint compression).
+
+        Args:
+            wsq_data: WSQ encoded image bytes
+        """
+        # Try to import WSQ decoder
+        try:
+            import wsq
+            # Try to decode WSQ
+            image_array, width, height, ppi, bpp = wsq.decode(wsq_data)
+
+            # Create PIL Image from numpy array
+            pil_image = Image.fromarray(image_array, mode='L')  # Grayscale
+
+            # Convert to RGB for display
+            pil_image = pil_image.convert('RGB')
+
+            # Convert PIL Image to QPixmap
+            image_bytes = pil_image.tobytes()
+            qimage = QImage(
+                image_bytes,
+                pil_image.width,
+                pil_image.height,
+                pil_image.width * 3,
+                QImage.Format_RGB888
+            )
+
+            pixmap = QPixmap.fromImage(qimage)
+
+            # Scale image to fit panel
+            scaled_pixmap = pixmap.scaled(
+                self.image_label.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+
+            self.image_label.setPixmap(scaled_pixmap)
+            self.image_label.setText("")
+
+        except ImportError:
+            # WSQ library not installed
+            self.image_label.setText(
+                "⚠️ WSQ Format Detected\n\n"
+                "This is a WSQ compressed fingerprint image.\n\n"
+                "To view WSQ images, install the wsq library:\n"
+                "   pip install wsq\n\n"
+                f"Image size: {len(wsq_data)} bytes\n"
+                "Format: WSQ (Wavelet Scalar Quantization)\n\n"
+                "Note: WSQ is a standard compression format\n"
+                "for fingerprint images used by FBI and law enforcement."
+            )
+        except Exception as e:
+            self.image_label.setText(
+                f"⚠️ WSQ Format Error\n\n"
+                f"Failed to decode WSQ image:\n{str(e)}\n\n"
+                f"Image size: {len(wsq_data)} bytes"
+            )
 
     def clear(self):
         """Clear the image panel."""
