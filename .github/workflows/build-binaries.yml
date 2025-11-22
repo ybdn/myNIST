@@ -214,30 +214,35 @@ jobs:
               run: |
                   pyinstaller nist-studio.spec
 
-            # Sign macOS binaries (ad-hoc signature to avoid Gatekeeper issues)
-            - name: Sign macOS binaries
+            # Sign macOS .app bundle (ad-hoc signature for Gatekeeper)
+            - name: Sign macOS app bundle
               if: runner.os == 'macOS'
               run: |
-                  echo "Signing all binaries in NIST-Studio folder..."
+                  echo "Signing NIST-Studio.app bundle..."
 
-                  # Sign all .so and .dylib files first (dependencies)
-                  find dist/NIST-Studio -type f \( -name "*.so" -o -name "*.dylib" \) -exec codesign --force --sign - --timestamp=none {} \;
+                  # Sign all nested binaries first (inside out)
+                  find "dist/NIST-Studio.app" -type f \( -name "*.so" -o -name "*.dylib" \) \
+                      -exec codesign --force --sign - --timestamp=none {} \;
 
-                  # Sign Python framework if present
-                  if [ -d "dist/NIST-Studio/_internal/Python.framework" ]; then
-                      codesign --force --deep --sign - --timestamp=none "dist/NIST-Studio/_internal/Python.framework"
-                  fi
+                  # Sign any frameworks
+                  find "dist/NIST-Studio.app/Contents/Frameworks" -name "*.framework" -type d 2>/dev/null | while read fw; do
+                      codesign --force --deep --sign - --timestamp=none "$fw"
+                  done
 
-                  # Sign the main executable last
-                  codesign --force --sign - --timestamp=none --deep "dist/NIST-Studio/nist-studio"
+                  # Sign the main executable
+                  codesign --force --sign - --timestamp=none \
+                      "dist/NIST-Studio.app/Contents/MacOS/nist-studio"
 
-                  # Verify signatures
+                  # Sign the entire .app bundle
+                  codesign --force --deep --sign - --timestamp=none "dist/NIST-Studio.app"
+
+                  # Verify
                   echo "Verifying signature..."
-                  codesign --verify --verbose "dist/NIST-Studio/nist-studio" || echo "Verification warning (expected for ad-hoc)"
+                  codesign --verify --verbose "dist/NIST-Studio.app" || echo "Verification note (ad-hoc signature)"
 
                   echo "macOS signing completed"
 
-            # Create distribution archives (onefolder mode)
+            # Create distribution archives
             - name: Create archive (Linux)
               if: runner.os == 'Linux'
               run: |
@@ -252,10 +257,12 @@ jobs:
               if: runner.os == 'macOS'
               run: |
                   mkdir -p release
-                  cd dist
-                  tar -czvf ../release/NIST-Studio-macos.tar.gz NIST-Studio
-                  cd ..
-                  echo "Created NIST-Studio-macos.tar.gz"
+
+                  # Create DMG for macOS (better user experience)
+                  hdiutil create -volname "NIST Studio" -srcfolder "dist/NIST-Studio.app" \
+                      -ov -format UDZO "release/NIST-Studio-macos.dmg"
+
+                  echo "Created NIST-Studio-macos.dmg"
                   ls -lh release/
 
             - name: Create archive (Windows)

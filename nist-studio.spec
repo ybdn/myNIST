@@ -2,8 +2,8 @@
 """PyInstaller spec file for NIST Studio application.
 
 Optimized for 'onefolder' mode for fast startup times.
-The onefile mode extracts files on each launch (10-20s delay).
-The onefolder mode keeps files ready, enabling instant startup (~1-3s).
+- Linux/Windows: COLLECT (folder with executable)
+- macOS: BUNDLE (.app bundle for better Gatekeeper compatibility)
 """
 
 import sys
@@ -150,17 +150,17 @@ elif sys.platform == 'darwin':
 else:
     icon_path = 'mynist/resources/icons/appicon-nist-studio-256.png'
 
-# EXE for onefolder mode (no bundled binaries/data - those go in COLLECT)
+# EXE configuration
 exe = EXE(
     pyz,
     a.scripts,
-    [],  # No binaries here for onefolder
-    exclude_binaries=True,  # Binaries go to COLLECT
+    [],
+    exclude_binaries=True,
     name='nist-studio',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # UPX disabled - slows down loading
+    upx=False,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -170,14 +170,36 @@ exe = EXE(
     icon=icon_path,
 )
 
-# COLLECT creates the onefolder distribution
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,  # UPX disabled for faster loading
-    upx_exclude=[],
-    name='NIST-Studio',  # Output folder name
-)
+# Platform-specific packaging
+if sys.platform == 'darwin':
+    # macOS: Create .app bundle for better Gatekeeper compatibility
+    app = BUNDLE(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        name='NIST-Studio.app',
+        icon=icon_path,
+        bundle_identifier='com.niststudio.app',
+        info_plist={
+            'CFBundleName': 'NIST Studio',
+            'CFBundleDisplayName': 'NIST Studio',
+            'CFBundleVersion': '1.0.0',
+            'CFBundleShortVersionString': '1.0.0',
+            'NSHighResolutionCapable': True,
+            'LSMinimumSystemVersion': '10.13.0',
+            'NSRequiresAquaSystemAppearance': False,
+        },
+    )
+else:
+    # Linux/Windows: Create folder distribution
+    coll = COLLECT(
+        exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=False,
+        upx_exclude=[],
+        name='NIST-Studio',
+    )
