@@ -63,7 +63,7 @@ jobs:
 
             - name: Build with PyInstaller
               run: |
-                  pyinstaller mynist.spec
+                  pyinstaller nist-studio.spec
 
             # Création du dossier release + renommage selon l'OS
             - name: Prepare release files (Linux/macOS)

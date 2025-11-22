@@ -1,10 +1,10 @@
 #!/bin/bash
-# Run script for myNIST application (development mode)
+# Run script for NIST Studio (development mode)
 
 set -e  # Exit on error
 
 echo "======================================"
-echo "Running myNIST (Development Mode)"
+echo "Running NIST Studio (Development Mode)"
 echo "======================================"
 echo ""
 
@@ -22,5 +22,5 @@ else
 fi
 
 # Run the application
-echo "Starting myNIST..."
+echo "Starting NIST Studio..."
 python -m mynist

@@ -1,10 +1,10 @@
 #!/bin/bash
-# Uninstallation script for myNIST on Ubuntu
+# Uninstallation script for NIST Studio on Ubuntu
 
 set -e  # Exit on error
 
 echo "================================================"
-echo "myNIST Ubuntu Uninstallation Script"
+echo "NIST Studio Ubuntu Uninstallation Script"
 echo "================================================"
 echo ""
 
@@ -15,7 +15,7 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-echo "This will remove myNIST from your system."
+echo "This will remove NIST Studio from your system."
 read -p "Are you sure you want to continue? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -24,23 +24,41 @@ if [[ ! $REPLY =~ ^[Yy]$ ]]; then
 fi
 
 echo ""
-echo "Removing myNIST..."
+echo "Removing NIST Studio..."
 
-# Remove installation directory
+# Remove installation directory (new location)
+if [ -d "/opt/nist-studio" ]; then
+    echo "  Removing /opt/nist-studio/..."
+    rm -rf /opt/nist-studio
+fi
+
+# Remove old installation directory (legacy)
 if [ -d "/opt/mynist" ]; then
-    echo "  Removing /opt/mynist/..."
+    echo "  Removing legacy /opt/mynist/..."
     rm -rf /opt/mynist
 fi
 
-# Remove desktop file
-if [ -f "/usr/share/applications/mynist.desktop" ]; then
+# Remove desktop files
+if [ -f "/usr/share/applications/nist-studio.desktop" ]; then
     echo "  Removing desktop entry..."
+    rm -f /usr/share/applications/nist-studio.desktop
+fi
+
+# Remove old desktop file (legacy)
+if [ -f "/usr/share/applications/mynist.desktop" ]; then
+    echo "  Removing legacy desktop entry..."
     rm -f /usr/share/applications/mynist.desktop
 fi
 
-# Remove symbolic link
-if [ -L "/usr/local/bin/mynist" ]; then
+# Remove symbolic links
+if [ -L "/usr/local/bin/nist-studio" ]; then
     echo "  Removing symbolic link..."
+    rm -f /usr/local/bin/nist-studio
+fi
+
+# Remove old symbolic link (legacy)
+if [ -L "/usr/local/bin/mynist" ]; then
+    echo "  Removing legacy symbolic link..."
     rm -f /usr/local/bin/mynist
 fi
 
@@ -53,5 +71,5 @@ echo "================================================"
 echo "Uninstallation Complete!"
 echo "================================================"
 echo ""
-echo "myNIST has been removed from your system."
+echo "NIST Studio has been removed from your system."
 echo ""

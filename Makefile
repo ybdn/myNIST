@@ -1,20 +1,18 @@
-.PHONY: help install run test build clean dev lint format
+.PHONY: help install run test clean dev lint format
 
 # Default target
 help:
-	@echo "myNIST - Makefile Commands"
+	@echo "NIST Studio - Makefile Commands"
 	@echo ""
 	@echo "Available commands:"
 	@echo "  make install    - Install dependencies"
 	@echo "  make run        - Run application in development mode"
 	@echo "  make test       - Run tests with pytest"
-	@echo "  make build      - Build executable with PyInstaller"
 	@echo "  make clean      - Clean build artifacts"
 	@echo "  make dev        - Install in development mode"
 	@echo "  make lint       - Run linters (flake8)"
 	@echo "  make format     - Format code with black"
 	@echo "  make venv       - Create virtual environment"
-	@echo "  make all        - Install, test, and build"
 
 # Create virtual environment
 venv:
@@ -46,12 +44,6 @@ test-coverage:
 	pytest --cov=mynist --cov-report=html tests/
 	@echo "Coverage report generated in htmlcov/index.html"
 
-# Build executable
-build:
-	@echo "Building myNIST executable..."
-	pyinstaller mynist.spec
-	@echo "Build complete! Executable: dist/mynist"
-
 # Clean build artifacts
 clean:
 	rm -rf build/
@@ -75,10 +67,6 @@ lint:
 # Format code
 format:
 	black mynist/ tests/ --line-length=100
-
-# Full workflow: install, test, build
-all: install test build
-	@echo "Full build complete!"
 
 # Quick test and run
 quick: test run
