@@ -42,15 +42,16 @@ jobs:
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
                   cd nbis-src
 
-                  export CFLAGS="-fcommon -O2"
-                  export CDEFS="-D__NBISLE__ -fcommon"
-
                   mkdir -p install
                   chmod +x setup.sh
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
 
                   make config
-                  sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
+
+                  # Fix for GCC >= 10: add -fcommon to all generated makefiles
+                  find . -name "p_rules.mak" -exec sed -i 's/CFLAGS :=/CFLAGS := -fcommon/g' {} \;
+                  find . -name "p_rules.mak" -exec sed -i 's/-O2/-O2 -fcommon/g' {} \;
+
                   make -j$(nproc) it
                   make install
 
@@ -131,7 +132,11 @@ jobs:
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
 
                   make config
-                  sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
+
+                  # Fix for GCC >= 10: add -fcommon to all generated makefiles
+                  find . -name "p_rules.mak" -exec sed -i 's/CFLAGS :=/CFLAGS := -fcommon/g' {} \;
+                  find . -name "p_rules.mak" -exec sed -i 's/-O2/-O2 -fcommon/g' {} \;
+
                   make -j$(nproc) it
                   make install
 
@@ -234,7 +239,10 @@ jobs:
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
 
                   make config
-                  sed -i '' 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
+
+                  # Fix for clang: add -fcommon to all generated makefiles (BSD sed syntax)
+                  find . -name "p_rules.mak" -exec sed -i '' 's/CFLAGS :=/CFLAGS := -fcommon/g' {} \;
+                  find . -name "p_rules.mak" -exec sed -i '' 's/-O2/-O2 -fcommon/g' {} \;
 
                   # Try parallel build, fallback to sequential
                   make -j$(sysctl -n hw.ncpu) it CFLAGS="$CFLAGS" 2>/dev/null || make it CFLAGS="$CFLAGS"
