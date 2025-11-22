@@ -138,102 +138,111 @@ class MainWindow(QMainWindow):
         """Create application menus."""
         menubar = self.menuBar()
 
-        # File menu
+        # ═══════════════════════════════════════════════════════════════════
+        # Menu Fichier
+        # ═══════════════════════════════════════════════════════════════════
         file_menu = menubar.addMenu('&Fichier')
 
-        # Open action
-        self.open_action = QAction('&Ouvrir un fichier NIST...', self)
+        self.open_action = QAction('&Ouvrir...', self)
         self.open_action.setShortcut('Ctrl+O')
         self.open_action.setStatusTip('Ouvrir un fichier NIST')
         self.open_action.triggered.connect(self.open_file)
         file_menu.addAction(self.open_action)
 
-        # Close action
-        self.close_action = QAction('&Fermer le fichier', self)
+        self.close_action = QAction('&Fermer', self)
         self.close_action.setShortcut('Ctrl+W')
-        self.close_action.setStatusTip('Fermer le fichier NIST courant')
+        self.close_action.setStatusTip('Fermer le fichier courant')
         self.close_action.triggered.connect(self.close_current_file)
         self.close_action.setEnabled(False)
         file_menu.addAction(self.close_action)
 
-        # Save As action
+        file_menu.addSeparator()
+
+        self.save_action = QAction('&Enregistrer', self)
+        self.save_action.setShortcut('Ctrl+S')
+        self.save_action.setStatusTip('Enregistrer les modifications')
+        self.save_action.triggered.connect(self.save_file_as)
+        self.save_action.setEnabled(False)
+        file_menu.addAction(self.save_action)
+
         self.save_as_action = QAction('Enregistrer &sous...', self)
         self.save_as_action.setShortcut('Ctrl+Shift+S')
-        self.save_as_action.setStatusTip('Enregistrer le fichier NIST sous un nouveau nom')
+        self.save_as_action.setStatusTip('Enregistrer sous un nouveau nom')
         self.save_as_action.triggered.connect(self.save_file_as)
         self.save_as_action.setEnabled(False)
         file_menu.addAction(self.save_as_action)
 
         file_menu.addSeparator()
 
-        # Export Signa Multiple action
-        self.export_signa_action = QAction('Export &Signa Multiple...', self)
+        # Sous-menu Exports
+        export_menu = file_menu.addMenu('E&xports')
+
+        self.export_signa_action = QAction('Export Signa &Multiple...', self)
         self.export_signa_action.setShortcut('Ctrl+E')
-        self.export_signa_action.setStatusTip('Exporter avec les modifications Signa Multiple')
+        self.export_signa_action.setStatusTip('Exporter avec modifications Signa Multiple')
         self.export_signa_action.triggered.connect(self.export_signa_multiple)
         self.export_signa_action.setEnabled(False)
-        file_menu.addAction(self.export_signa_action)
+        export_menu.addAction(self.export_signa_action)
 
-        # Export PDF décadactylaire
-        self.export_pdf_action = QAction('Exporter relevé &PDF...', self)
-        self.export_pdf_action.setShortcut('Ctrl+P')
-        self.export_pdf_action.setStatusTip('Exporter un relevé décadactylaire PDF')
-        self.export_pdf_action.triggered.connect(self.switch_to_pdf_view)
-        self.export_pdf_action.setEnabled(False)
-        file_menu.addAction(self.export_pdf_action)
+        # Supprime l'ancien export_pdf_action du menu Fichier (maintenant dans Outils)
 
         file_menu.addSeparator()
 
-        # Quit action
         self.quit_action = QAction('&Quitter', self)
         self.quit_action.setShortcut('Ctrl+Q')
         self.quit_action.setStatusTip("Quitter l'application")
         self.quit_action.triggered.connect(self.close)
         file_menu.addAction(self.quit_action)
 
-        # Navigation menu
-        nav_menu = menubar.addMenu('&Navigation')
-        self.nav_home_action = QAction('Aller au &hub', self)
+        # ═══════════════════════════════════════════════════════════════════
+        # Menu Outils
+        # ═══════════════════════════════════════════════════════════════════
+        tools_menu = menubar.addMenu('&Outils')
+
+        self.nav_home_action = QAction('&Accueil', self)
         self.nav_home_action.setShortcut('Alt+1')
-        self.nav_home_action.setStatusTip('Retour à l\'accueil')
+        self.nav_home_action.setStatusTip('Retour a l\'accueil')
         self.nav_home_action.triggered.connect(self.switch_to_home)
-        nav_menu.addAction(self.nav_home_action)
+        tools_menu.addAction(self.nav_home_action)
 
-        self.nav_view_action = QAction('Aller au &viewer', self)
-        self.nav_view_action.setShortcut('Alt+2')
-        self.nav_view_action.setStatusTip('Afficher le viewer 3 panneaux')
-        self.nav_view_action.triggered.connect(self.on_resume_last_mode)
-        nav_menu.addAction(self.nav_view_action)
-        self.nav_view_action.setEnabled(False)
+        tools_menu.addSeparator()
 
-        self.nav_compare_action = QAction('Aller à la &comparaison', self)
+        self.nav_viewer_action = QAction('NIST-&Viewer', self)
+        self.nav_viewer_action.setShortcut('Alt+2')
+        self.nav_viewer_action.setStatusTip('Visualiser et editer des fichiers NIST')
+        self.nav_viewer_action.triggered.connect(self.switch_to_viewer)
+        self.nav_viewer_action.setEnabled(False)
+        tools_menu.addAction(self.nav_viewer_action)
+
+        self.nav_compare_action = QAction('NIST-&Compare', self)
         self.nav_compare_action.setShortcut('Alt+3')
-        self.nav_compare_action.setStatusTip('Afficher la vue comparaison')
+        self.nav_compare_action.setStatusTip('Comparer cote a cote deux images')
         self.nav_compare_action.triggered.connect(self.switch_to_comparison)
-        self.nav_compare_action.setEnabled(True)
-        nav_menu.addAction(self.nav_compare_action)
+        tools_menu.addAction(self.nav_compare_action)
 
-        self.nav_pdf_action = QAction('Aller à l\'export &PDF', self)
+        self.nav_pdf_action = QAction('NIST-2-&PDF', self)
         self.nav_pdf_action.setShortcut('Alt+4')
-        self.nav_pdf_action.setStatusTip('Exporter un relevé PDF')
+        self.nav_pdf_action.setStatusTip('Exporter un releve decadactylaire PDF')
         self.nav_pdf_action.triggered.connect(self.switch_to_pdf_view)
         self.nav_pdf_action.setEnabled(False)
-        nav_menu.addAction(self.nav_pdf_action)
+        tools_menu.addAction(self.nav_pdf_action)
 
-        # Help menu
+        self.nav_image2nist_action = QAction('&Image-2-NIST', self)
+        self.nav_image2nist_action.setShortcut('Alt+5')
+        self.nav_image2nist_action.setStatusTip('Convertir une image en fichier NIST (a venir)')
+        self.nav_image2nist_action.triggered.connect(self.switch_to_image2nist)
+        self.nav_image2nist_action.setEnabled(False)
+        tools_menu.addAction(self.nav_image2nist_action)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # Menu Aide
+        # ═══════════════════════════════════════════════════════════════════
         help_menu = menubar.addMenu('&Aide')
 
-        # About action
-        self.about_action = QAction('À &propos', self)
-        self.about_action.setStatusTip('À propos de NIST Studio')
+        self.about_action = QAction('A &propos de NIST Studio', self)
+        self.about_action.setStatusTip('A propos de NIST Studio')
         self.about_action.triggered.connect(self.show_about)
         help_menu.addAction(self.about_action)
-
-        # Export Signa Info action
-        self.info_action = QAction('Informations Export &Signa Multiple', self)
-        self.info_action.setStatusTip('Informations sur Export Signa Multiple')
-        self.info_action.triggered.connect(self.show_export_info)
-        help_menu.addAction(self.info_action)
 
     def create_toolbar(self):
         """Create quick action toolbar with icons."""
@@ -273,7 +282,6 @@ class MainWindow(QMainWindow):
         self.open_action.setIcon(self._build_plus_icon())
         self.close_action.setIcon(self._build_stop_icon())
         self.export_signa_action.setIcon(self._build_magic_icon())
-        self.export_pdf_action.setIcon(self._build_magic_icon())
 
         toolbar.addAction(self.open_action)
         toolbar.addAction(self.close_action)
@@ -341,8 +349,8 @@ class MainWindow(QMainWindow):
         """Enable or disable actions based on whether a file is loaded."""
         self.close_action.setEnabled(file_open)
         self.export_signa_action.setEnabled(file_open)
-        self.export_pdf_action.setEnabled(file_open)
-        self.nav_view_action.setEnabled(file_open)
+        self.nav_viewer_action.setEnabled(file_open)
+        self.nav_pdf_action.setEnabled(file_open)
         self.resume_action.setEnabled(file_open)
         self.save_as_action.setEnabled(file_open)
         self.save_action.setEnabled(file_open and self.is_modified)
