@@ -34,22 +34,24 @@ jobs:
               if: runner.os == 'Linux'
               run: |
                   sudo apt-get update
-                  sudo apt-get install -y build-essential cmake libpng-dev zlib1g-dev
+                  sudo apt-get install -y build-essential libpng-dev zlib1g-dev
 
                   # Download NBIS source
-                  curl -L -o nbis.zip "https://github.com/lessandro/nbern/archive/refs/heads/master.zip"
+                  curl -L -o nbis.zip "https://github.com/lessandro/nbis/archive/refs/heads/master.zip"
                   unzip -q nbis.zip
-                  cd nbern-master
+                  cd nbis-master
 
-                  # Build
-                  mkdir build && cd build
-                  cmake ..
-                  make -j$(nproc)
+                  # Build with native NBIS build system
+                  chmod +x setup.sh
+                  ./setup.sh $(pwd)/install --without-X11 --STDLIBS
+                  make config
+                  make -j$(nproc) it
 
                   # Copy binaries
                   mkdir -p $GITHUB_WORKSPACE/nbis/bin
-                  cp bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || true
-                  cp bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || true
+                  cp install/bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "dwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
+                  cp install/bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "cwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
+                  cp install/bin/nfiq $GITHUB_WORKSPACE/nbis/bin/ || true
 
                   echo "NBIS built successfully"
                   ls -la $GITHUB_WORKSPACE/nbis/bin/
@@ -57,47 +59,37 @@ jobs:
             - name: Build NBIS (macOS)
               if: runner.os == 'macOS'
               run: |
-                  brew install cmake libpng
+                  brew install libpng
 
                   # Download NBIS source
-                  curl -L -o nbis.zip "https://github.com/lessandro/nbern/archive/refs/heads/master.zip"
+                  curl -L -o nbis.zip "https://github.com/lessandro/nbis/archive/refs/heads/master.zip"
                   unzip -q nbis.zip
-                  cd nbern-master
+                  cd nbis-master
 
-                  # Build
-                  mkdir build && cd build
-                  cmake ..
-                  make -j$(sysctl -n hw.ncpu)
+                  # Build with native NBIS build system
+                  chmod +x setup.sh
+                  ./setup.sh $(pwd)/install --without-X11 --STDLIBS
+                  make config
+                  make -j$(sysctl -n hw.ncpu) it
 
                   # Copy binaries
                   mkdir -p $GITHUB_WORKSPACE/nbis/bin
-                  cp bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || true
-                  cp bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || true
+                  cp install/bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "dwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
+                  cp install/bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "cwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
+                  cp install/bin/nfiq $GITHUB_WORKSPACE/nbis/bin/ || true
 
                   echo "NBIS built successfully"
                   ls -la $GITHUB_WORKSPACE/nbis/bin/
 
             - name: Build NBIS (Windows)
               if: runner.os == 'Windows'
-              shell: bash
+              shell: pwsh
               run: |
-                  # Download NBIS source
-                  curl -L -o nbis.zip "https://github.com/lessandro/nbern/archive/refs/heads/master.zip"
-                  unzip -q nbis.zip
-                  cd nbern-master
-
-                  # Build with CMake + MSVC
-                  mkdir build && cd build
-                  cmake .. -G "Visual Studio 17 2022" -A x64
-                  cmake --build . --config Release
-
-                  # Copy binaries
-                  mkdir -p $GITHUB_WORKSPACE/nbis/bin
-                  cp bin/Release/dwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || cp bin/dwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || true
-                  cp bin/Release/cwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || cp bin/cwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || true
-
-                  echo "NBIS built successfully"
-                  ls -la $GITHUB_WORKSPACE/nbis/bin/
+                  # On Windows, use pre-built wsq Python package (NBIS build requires Cygwin/MSYS2)
+                  # The wsq Python package already includes NBIS WSQ library
+                  Write-Host "Windows: Using wsq Python package for WSQ support"
+                  mkdir -Force nbis/bin | Out-Null
+                  echo "WSQ support provided by Python wsq package" > nbis/bin/README.txt
 
             # Generate proper multi-resolution ICO on Windows
             - name: Generate Windows icon
