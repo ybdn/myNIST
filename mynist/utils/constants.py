@@ -1,9 +1,9 @@
-"""Constants for myNIST application."""
+"""Constants for NIST Studio application."""
 
 # Application metadata
-APP_NAME = "myNIST"
-APP_VERSION = "0.1.0"
-APP_DESCRIPTION = "NIST File Viewer and Editor"
+APP_NAME = "NIST Studio"
+APP_VERSION = "1.0.0"
+APP_DESCRIPTION = "Suite d'outils biométriques NIST"
 
 # NIST Record Types
 RECORD_TYPE_NAMES = {

@@ -21,6 +21,7 @@ from mynist.views.image_panel import ImagePanel
 from mynist.views.home_view import HomeView
 from mynist.views.pdf_export_view import PdfExportView
 from mynist.views.comparison_view import ComparisonView
+from mynist.views.image2nist_view import Image2NISTView
 from mynist.controllers.file_controller import FileController
 from mynist.controllers.export_controller import ExportController
 from mynist.controllers.pdf_controller import PDFController
@@ -47,7 +48,7 @@ class MainWindow(QMainWindow):
         self.file_controller = FileController()
         self.export_controller = ExportController()
         self.pdf_controller = PDFController()
-        self.base_title = f"{APP_NAME} - NIST File Viewer"
+        self.base_title = APP_NAME
         self.recent_files = RecentFiles()
         self.active_mode = "home"
         self.last_non_home_mode = "viewer"
@@ -72,10 +73,12 @@ class MainWindow(QMainWindow):
         self.viewer_page = self._build_viewer_page()
         self.pdf_view = PdfExportView(self)
         self.comparison_view = ComparisonView(self)
-        self.stacked_widget.addWidget(self.home_view)       # index 0
-        self.stacked_widget.addWidget(self.viewer_page)     # index 1
-        self.stacked_widget.addWidget(self.pdf_view)        # index 2
-        self.stacked_widget.addWidget(self.comparison_view) # index 3
+        self.image2nist_view = Image2NISTView(self)
+        self.stacked_widget.addWidget(self.home_view)        # index 0
+        self.stacked_widget.addWidget(self.viewer_page)      # index 1
+        self.stacked_widget.addWidget(self.pdf_view)         # index 2
+        self.stacked_widget.addWidget(self.comparison_view)  # index 3
+        self.stacked_widget.addWidget(self.image2nist_view)  # index 4
         self.setCentralWidget(self.stacked_widget)
 
         # Connect HomeView signals
@@ -87,6 +90,8 @@ class MainWindow(QMainWindow):
         self.pdf_view.back_requested.connect(self.switch_to_home)
         self.pdf_view.browse_requested.connect(self.export_pdf_report)
         self.pdf_view.export_requested.connect(self.export_pdf_report_with_path)
+        self.image2nist_view.back_requested.connect(self.switch_to_home)
+        self.comparison_view.back_requested.connect(self.switch_to_home)
 
         # Create menu bar
         self.create_menus()
@@ -220,7 +225,7 @@ class MainWindow(QMainWindow):
 
         # About action
         self.about_action = QAction('À &propos', self)
-        self.about_action.setStatusTip('À propos de myNIST')
+        self.about_action.setStatusTip('À propos de NIST Studio')
         self.about_action.triggered.connect(self.show_about)
         help_menu.addAction(self.about_action)
 
@@ -545,17 +550,17 @@ class MainWindow(QMainWindow):
         """Show about dialog."""
         QMessageBox.about(
             self,
-            f"À propos de {APP_NAME}",
+            f"A propos de {APP_NAME}",
             f"<h2>{APP_NAME} {APP_VERSION}</h2>"
-            "<p>Visualiseur/éditeur de fichiers ANSI/NIST-ITL</p>"
-            "<p>Fonctionnalités :</p>"
+            "<p>Suite d'outils biometriques NIST</p>"
+            "<p><b>Outils integres :</b></p>"
             "<ul>"
-            "<li>Visualisation des fichiers ANSI/NIST-ITL</li>"
-            "<li>Affichage/édition des données Type-2</li>"
-            "<li>Affichage des images biométriques</li>"
-            "<li>Export Signa Multiple automatisé</li>"
+            "<li><b>NIST-Viewer</b> : Visualisation et edition de fichiers ANSI/NIST-ITL</li>"
+            "<li><b>NIST-Compare</b> : Comparaison cote a cote d'images biometriques</li>"
+            "<li><b>NIST-2-PDF</b> : Export de releves decadactylaires PDF</li>"
+            "<li><b>Image-2-NIST</b> : Conversion d'images en fichiers NIST (a venir)</li>"
             "</ul>"
-            "<p>Motorisé par nistitl (Idemia) et PyQt5</p>"
+            "<p>Motorise par nistitl (Idemia) et PyQt5</p>"
         )
 
     def show_export_info(self):
@@ -618,7 +623,13 @@ class MainWindow(QMainWindow):
         self.active_mode = "comparison"
         self.last_non_home_mode = "comparison"
         self.stacked_widget.setCurrentIndex(3)
-        self.status_bar.showMessage("Comparaison", 3000)
+        self.status_bar.showMessage("NIST-Compare", 3000)
+
+    def switch_to_image2nist(self):
+        """Show Image-2-NIST view (placeholder)."""
+        self.active_mode = "image2nist"
+        self.stacked_widget.setCurrentIndex(4)
+        self.status_bar.showMessage("Image-2-NIST (en developpement)", 3000)
 
     def on_open_recent(self, path: str):
         """Handle opening a recent file from HomeView."""
@@ -651,6 +662,8 @@ class MainWindow(QMainWindow):
             self.switch_to_comparison()
         elif mode == "pdf":
             self.switch_to_pdf_view()
+        elif mode == "image2nist":
+            self.switch_to_image2nist()
 
     def on_resume_last_mode(self):
         """Resume last non-home mode when a file is open."""
@@ -659,6 +672,10 @@ class MainWindow(QMainWindow):
             return
         if self.last_non_home_mode == "viewer":
             self.switch_to_viewer()
+        elif self.last_non_home_mode == "comparison":
+            self.switch_to_comparison()
+        elif self.last_non_home_mode == "pdf":
+            self.switch_to_pdf_view()
         else:
             self.switch_to_viewer()
 
