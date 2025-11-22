@@ -1,5 +1,6 @@
 """Vue de comparaison côte à côte (NIST/Image/PDF) avec calibration DPI enrichie."""
 
+import io
 import math
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict
@@ -40,6 +41,10 @@ from PyQt5.QtWidgets import (
 from PIL import Image, ImageEnhance, ImageOps
 
 from mynist.utils.design_tokens import load_svg_icon
+from mynist.models.nist_file import NISTFile
+from mynist.utils.image_tools import locate_image_payload, detect_image_format, exif_transpose
+from mynist.utils.image_codecs import decode_wsq, decode_jpeg2000
+from mynist.utils.biometric_labels import get_short_label_fr
 
 # Import des modules refactorisés
 from mynist.views.comparison import (
