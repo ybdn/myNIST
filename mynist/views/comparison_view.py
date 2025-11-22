@@ -519,11 +519,6 @@ class ComparisonView(QWidget):
         self._adjust_parent = None
         self.grid_enabled = False
         self.grid_items = {"left": [], "right": []}
-        self.blink_timer = QTimer(self)
-        self.blink_timer.setInterval(600)
-        self.blink_timer.timeout.connect(self._blink_tick)
-        self._blink_state = True
-
         self._build_ui()
         self._connect_signals()
 
@@ -747,13 +742,6 @@ class ComparisonView(QWidget):
         self.overlay_slider.setValue(int(self.overlay_alpha * 100))
         self.overlay_slider.setFixedWidth(140)
         self.overlay_slider.valueChanged.connect(self._on_overlay_alpha_changed)
-
-        self.blink_action = QAction("Blink", self)
-        self.blink_action.setCheckable(True)
-        self.blink_action.setToolTip("Alterner gauche/droite rapidement")
-        self._set_icon(self.blink_action, "blink")
-        self.blink_action.toggled.connect(self._on_blink_toggled)
-        toolbar.addAction(self.blink_action)
 
         toolbar.addSeparator()
 
@@ -1889,12 +1877,6 @@ class ComparisonView(QWidget):
             y += step
         self.grid_items[side] = items
 
-    def _blink_tick(self):
-        self._blink_state = not self._blink_state
-        self.left_view.setVisible(self._blink_state)
-        self.right_view.setVisible(not self._blink_state)
-
-
     # ─────────────────────────────────────────────────────────────────────
     # Modes toolbar
     # ─────────────────────────────────────────────────────────────────────
@@ -2167,7 +2149,6 @@ class ComparisonView(QWidget):
             self.left_radio.blockSignals(False)
             self.right_radio.blockSignals(False)
             self._sync_controls_to_side()
-            self.blink_action.setChecked(False)
             self.right_image_container.setVisible(False)
             self.right_view.setVisible(False)
             self.left_view.setDragMode(QGraphicsView.NoDrag)
@@ -2232,17 +2213,6 @@ class ComparisonView(QWidget):
                 item.setOpacity(self.overlay_alpha)
         if self.overlay_popup:
             self.overlay_popup.adjustSize()
-
-    def _on_blink_toggled(self, checked: bool):
-        if checked:
-            self._blink_state = True
-            self.left_view.setVisible(True)
-            self.right_view.setVisible(False)
-            self.blink_timer.start()
-        else:
-            self.blink_timer.stop()
-            self.left_view.setVisible(True)
-            self.right_view.setVisible(True)
 
     def _scale_annotation_meta(self, side: str, ratio: float) -> List[Dict[str, object]]:
         view = self.left_view if side == "left" else self.right_view
