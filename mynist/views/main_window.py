@@ -4,8 +4,12 @@ from pathlib import Path
 from PyQt5.QtWidgets import (
     QAction,
     QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -14,13 +18,15 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from PyQt5.QtCore import Qt, QSize, QPoint
-from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPen, QPalette
+from PyQt5.QtSvg import QSvgRenderer
 from mynist.views.file_panel import FilePanel
 from mynist.views.data_panel import DataPanel
 from mynist.views.image_panel import ImagePanel
 from mynist.views.home_view import HomeView
 from mynist.views.pdf_export_view import PdfExportView
 from mynist.views.comparison_view import ComparisonView
+from mynist.views.image2nist_view import Image2NISTView
 from mynist.controllers.file_controller import FileController
 from mynist.controllers.export_controller import ExportController
 from mynist.controllers.pdf_controller import PDFController
@@ -34,6 +40,7 @@ from mynist.utils.constants import (
 )
 from mynist.utils.logger import get_logger
 from mynist.utils.recent_files import RecentFiles
+from mynist.utils.design_tokens import Typography, Spacing, Radius, load_svg_icon
 
 logger = get_logger(__name__)
 
@@ -47,7 +54,7 @@ class MainWindow(QMainWindow):
         self.file_controller = FileController()
         self.export_controller = ExportController()
         self.pdf_controller = PDFController()
-        self.base_title = f"{APP_NAME} - NIST File Viewer"
+        self.base_title = APP_NAME
         self.recent_files = RecentFiles()
         self.active_mode = "home"
         self.last_non_home_mode = "viewer"
@@ -62,7 +69,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
         # Set application icon
-        icon_path = Path(__file__).parent.parent / 'resources' / 'icons' / 'mynist.png'
+        icon_path = Path(__file__).parent.parent / 'resources' / 'icons' / 'appicon-nist-studio.png'
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
@@ -72,10 +79,12 @@ class MainWindow(QMainWindow):
         self.viewer_page = self._build_viewer_page()
         self.pdf_view = PdfExportView(self)
         self.comparison_view = ComparisonView(self)
-        self.stacked_widget.addWidget(self.home_view)       # index 0
-        self.stacked_widget.addWidget(self.viewer_page)     # index 1
-        self.stacked_widget.addWidget(self.pdf_view)        # index 2
-        self.stacked_widget.addWidget(self.comparison_view) # index 3
+        self.image2nist_view = Image2NISTView(self)
+        self.stacked_widget.addWidget(self.home_view)        # index 0
+        self.stacked_widget.addWidget(self.viewer_page)      # index 1
+        self.stacked_widget.addWidget(self.pdf_view)         # index 2
+        self.stacked_widget.addWidget(self.comparison_view)  # index 3
+        self.stacked_widget.addWidget(self.image2nist_view)  # index 4
         self.setCentralWidget(self.stacked_widget)
 
         # Connect HomeView signals
@@ -87,6 +96,10 @@ class MainWindow(QMainWindow):
         self.pdf_view.back_requested.connect(self.switch_to_home)
         self.pdf_view.browse_requested.connect(self.export_pdf_report)
         self.pdf_view.export_requested.connect(self.export_pdf_report_with_path)
+        self.pdf_view.import_requested.connect(self.open_file)
+        self.pdf_view.close_requested.connect(self.close_current_file)
+        self.image2nist_view.back_requested.connect(self.switch_to_home)
+        self.comparison_view.back_requested.connect(self.switch_to_home)
 
         # Create menu bar
         self.create_menus()
@@ -105,8 +118,85 @@ class MainWindow(QMainWindow):
         self.update_actions_state(False)
 
     def _build_viewer_page(self) -> QWidget:
-        """Create viewer page containing the 3-panel splitter."""
+        """Create viewer page containing header bar and 3-panel splitter."""
         container = QWidget()
+
+        # Minimal styling - let OS handle colors
+        container.setStyleSheet(f"""
+            #viewerTitleLabel {{
+                font-size: {Typography.SIZE_LG}px;
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+            }}
+            #viewerFileLabel {{
+                font-size: {Typography.SIZE_SM}px;
+            }}
+            #hubButton {{
+                border-radius: {Radius.MD}px;
+                padding: {Spacing.SM}px {Spacing.LG}px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+            }}
+        """)
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header bar
+        header = QFrame()
+        header.setObjectName("viewerHeader")
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(Spacing.LG, Spacing.SM, Spacing.LG, Spacing.SM)
+
+        # Hub button
+        hub_btn = QPushButton("Retour au Hub")
+        hub_btn.setObjectName("hubButton")
+        hub_btn.setCursor(Qt.PointingHandCursor)
+        hub_btn.clicked.connect(self.switch_to_home)
+        hub_icon = self._load_hub_icon("home", 20)
+        if not hub_icon.isNull():
+            hub_btn.setIcon(hub_icon)
+        header_layout.addWidget(hub_btn)
+
+        header_layout.addStretch()
+
+        # Title
+        title = QLabel("NIST-Viewer")
+        title.setObjectName("viewerTitleLabel")
+        header_layout.addWidget(title)
+
+        header_layout.addStretch()
+
+        # File info label
+        self.viewer_file_label = QLabel("Aucun fichier")
+        self.viewer_file_label.setObjectName("viewerFileLabel")
+        header_layout.addWidget(self.viewer_file_label)
+
+        header_layout.addSpacing(Spacing.LG)
+
+        # Save button
+        self.viewer_save_btn = QPushButton("Sauvegarder")
+        self.viewer_save_btn.setCursor(Qt.PointingHandCursor)
+        self.viewer_save_btn.clicked.connect(self.save_file)
+        self.viewer_save_btn.setEnabled(False)
+        header_layout.addWidget(self.viewer_save_btn)
+
+        # Import button
+        import_btn = QPushButton("Importer")
+        import_btn.setCursor(Qt.PointingHandCursor)
+        import_btn.clicked.connect(self.open_file)
+        header_layout.addWidget(import_btn)
+
+        # Close button
+        self.viewer_close_btn = QPushButton("Fermer")
+        self.viewer_close_btn.setCursor(Qt.PointingHandCursor)
+        self.viewer_close_btn.clicked.connect(self.close_current_file)
+        self.viewer_close_btn.setEnabled(False)
+        header_layout.addWidget(self.viewer_close_btn)
+
+        header.setLayout(header_layout)
+        layout.addWidget(header)
+
+        # 3-panel splitter
         splitter = QSplitter(Qt.Horizontal)
 
         self.file_panel = FilePanel(self)
@@ -118,9 +208,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.image_panel)
         splitter.setSizes(PANEL_SIZES)
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(splitter)
+        layout.addWidget(splitter, 1)
         container.setLayout(layout)
 
         # Connect signals
@@ -129,106 +217,125 @@ class MainWindow(QMainWindow):
 
         return container
 
+    def _load_hub_icon(self, name: str, size: int = 24) -> QIcon:
+        """Load SVG icon from hub folder with OS-appropriate color.
+
+        Args:
+            name: Icon name (without .svg extension)
+            size: Icon size in pixels
+        """
+        path = Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
+        return load_svg_icon(path, size=size)
+
     def create_menus(self):
         """Create application menus."""
         menubar = self.menuBar()
 
-        # File menu
+        # ═══════════════════════════════════════════════════════════════════
+        # Menu Fichier
+        # ═══════════════════════════════════════════════════════════════════
         file_menu = menubar.addMenu('&Fichier')
 
-        # Open action
-        self.open_action = QAction('&Ouvrir un fichier NIST...', self)
+        self.open_action = QAction('&Ouvrir...', self)
         self.open_action.setShortcut('Ctrl+O')
         self.open_action.setStatusTip('Ouvrir un fichier NIST')
         self.open_action.triggered.connect(self.open_file)
         file_menu.addAction(self.open_action)
 
-        # Close action
-        self.close_action = QAction('&Fermer le fichier', self)
+        self.close_action = QAction('&Fermer', self)
         self.close_action.setShortcut('Ctrl+W')
-        self.close_action.setStatusTip('Fermer le fichier NIST courant')
+        self.close_action.setStatusTip('Fermer le fichier courant')
         self.close_action.triggered.connect(self.close_current_file)
         self.close_action.setEnabled(False)
         file_menu.addAction(self.close_action)
 
-        # Save As action
+        file_menu.addSeparator()
+
+        self.save_action = QAction('&Enregistrer', self)
+        self.save_action.setShortcut('Ctrl+S')
+        self.save_action.setStatusTip('Enregistrer les modifications')
+        self.save_action.triggered.connect(self.save_file_as)
+        self.save_action.setEnabled(False)
+        file_menu.addAction(self.save_action)
+
         self.save_as_action = QAction('Enregistrer &sous...', self)
         self.save_as_action.setShortcut('Ctrl+Shift+S')
-        self.save_as_action.setStatusTip('Enregistrer le fichier NIST sous un nouveau nom')
+        self.save_as_action.setStatusTip('Enregistrer sous un nouveau nom')
         self.save_as_action.triggered.connect(self.save_file_as)
         self.save_as_action.setEnabled(False)
         file_menu.addAction(self.save_as_action)
 
         file_menu.addSeparator()
 
-        # Export Signa Multiple action
-        self.export_signa_action = QAction('Export &Signa Multiple...', self)
+        # Sous-menu Exports
+        export_menu = file_menu.addMenu('E&xports')
+
+        self.export_signa_action = QAction('Export Signa &Multiple...', self)
         self.export_signa_action.setShortcut('Ctrl+E')
-        self.export_signa_action.setStatusTip('Exporter avec les modifications Signa Multiple')
+        self.export_signa_action.setStatusTip('Exporter avec modifications Signa Multiple')
         self.export_signa_action.triggered.connect(self.export_signa_multiple)
         self.export_signa_action.setEnabled(False)
-        file_menu.addAction(self.export_signa_action)
+        export_menu.addAction(self.export_signa_action)
 
-        # Export PDF décadactylaire
-        self.export_pdf_action = QAction('Exporter relevé &PDF...', self)
-        self.export_pdf_action.setShortcut('Ctrl+P')
-        self.export_pdf_action.setStatusTip('Exporter un relevé décadactylaire PDF')
-        self.export_pdf_action.triggered.connect(self.switch_to_pdf_view)
-        self.export_pdf_action.setEnabled(False)
-        file_menu.addAction(self.export_pdf_action)
+        # Supprime l'ancien export_pdf_action du menu Fichier (maintenant dans Outils)
 
         file_menu.addSeparator()
 
-        # Quit action
         self.quit_action = QAction('&Quitter', self)
         self.quit_action.setShortcut('Ctrl+Q')
         self.quit_action.setStatusTip("Quitter l'application")
         self.quit_action.triggered.connect(self.close)
         file_menu.addAction(self.quit_action)
 
-        # Navigation menu
-        nav_menu = menubar.addMenu('&Navigation')
-        self.nav_home_action = QAction('Aller au &hub', self)
+        # ═══════════════════════════════════════════════════════════════════
+        # Menu Outils
+        # ═══════════════════════════════════════════════════════════════════
+        tools_menu = menubar.addMenu('&Outils')
+
+        self.nav_home_action = QAction('&Accueil', self)
         self.nav_home_action.setShortcut('Alt+1')
-        self.nav_home_action.setStatusTip('Retour à l\'accueil')
+        self.nav_home_action.setStatusTip('Retour a l\'accueil')
         self.nav_home_action.triggered.connect(self.switch_to_home)
-        nav_menu.addAction(self.nav_home_action)
+        tools_menu.addAction(self.nav_home_action)
 
-        self.nav_view_action = QAction('Aller au &viewer', self)
-        self.nav_view_action.setShortcut('Alt+2')
-        self.nav_view_action.setStatusTip('Afficher le viewer 3 panneaux')
-        self.nav_view_action.triggered.connect(self.on_resume_last_mode)
-        nav_menu.addAction(self.nav_view_action)
-        self.nav_view_action.setEnabled(False)
+        tools_menu.addSeparator()
 
-        self.nav_compare_action = QAction('Aller à la &comparaison', self)
+        self.nav_viewer_action = QAction('NIST-&Viewer', self)
+        self.nav_viewer_action.setShortcut('Alt+2')
+        self.nav_viewer_action.setStatusTip('Visualiser et editer des fichiers NIST')
+        self.nav_viewer_action.triggered.connect(self.switch_to_viewer)
+        self.nav_viewer_action.setEnabled(False)
+        tools_menu.addAction(self.nav_viewer_action)
+
+        self.nav_compare_action = QAction('NIST-&Compare', self)
         self.nav_compare_action.setShortcut('Alt+3')
-        self.nav_compare_action.setStatusTip('Afficher la vue comparaison')
+        self.nav_compare_action.setStatusTip('Comparer cote a cote deux images')
         self.nav_compare_action.triggered.connect(self.switch_to_comparison)
-        self.nav_compare_action.setEnabled(True)
-        nav_menu.addAction(self.nav_compare_action)
+        tools_menu.addAction(self.nav_compare_action)
 
-        self.nav_pdf_action = QAction('Aller à l\'export &PDF', self)
+        self.nav_pdf_action = QAction('NIST-2-&PDF', self)
         self.nav_pdf_action.setShortcut('Alt+4')
-        self.nav_pdf_action.setStatusTip('Exporter un relevé PDF')
+        self.nav_pdf_action.setStatusTip('Exporter un releve decadactylaire PDF')
         self.nav_pdf_action.triggered.connect(self.switch_to_pdf_view)
         self.nav_pdf_action.setEnabled(False)
-        nav_menu.addAction(self.nav_pdf_action)
+        tools_menu.addAction(self.nav_pdf_action)
 
-        # Help menu
+        self.nav_image2nist_action = QAction('&Image-2-NIST', self)
+        self.nav_image2nist_action.setShortcut('Alt+5')
+        self.nav_image2nist_action.setStatusTip('Convertir une image en fichier NIST (a venir)')
+        self.nav_image2nist_action.triggered.connect(self.switch_to_image2nist)
+        self.nav_image2nist_action.setEnabled(False)
+        tools_menu.addAction(self.nav_image2nist_action)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # Menu Aide
+        # ═══════════════════════════════════════════════════════════════════
         help_menu = menubar.addMenu('&Aide')
 
-        # About action
-        self.about_action = QAction('À &propos', self)
-        self.about_action.setStatusTip('À propos de myNIST')
+        self.about_action = QAction('A &propos de NIST Studio', self)
+        self.about_action.setStatusTip('A propos de NIST Studio')
         self.about_action.triggered.connect(self.show_about)
         help_menu.addAction(self.about_action)
-
-        # Export Signa Info action
-        self.info_action = QAction('Informations Export &Signa Multiple', self)
-        self.info_action.setStatusTip('Informations sur Export Signa Multiple')
-        self.info_action.triggered.connect(self.show_export_info)
-        help_menu.addAction(self.info_action)
 
     def create_toolbar(self):
         """Create quick action toolbar with icons."""
@@ -268,7 +375,6 @@ class MainWindow(QMainWindow):
         self.open_action.setIcon(self._build_plus_icon())
         self.close_action.setIcon(self._build_stop_icon())
         self.export_signa_action.setIcon(self._build_magic_icon())
-        self.export_pdf_action.setIcon(self._build_magic_icon())
 
         toolbar.addAction(self.open_action)
         toolbar.addAction(self.close_action)
@@ -336,13 +442,18 @@ class MainWindow(QMainWindow):
         """Enable or disable actions based on whether a file is loaded."""
         self.close_action.setEnabled(file_open)
         self.export_signa_action.setEnabled(file_open)
-        self.export_pdf_action.setEnabled(file_open)
-        self.nav_view_action.setEnabled(file_open)
+        self.nav_viewer_action.setEnabled(True)  # Always accessible
+        self.nav_pdf_action.setEnabled(file_open)
         self.resume_action.setEnabled(file_open)
         self.save_as_action.setEnabled(file_open)
         self.save_action.setEnabled(file_open and self.is_modified)
         self.undo_action.setEnabled(self.last_change is not None)
         self.nav_compare_action.setEnabled(True)
+        # Viewer close and save buttons
+        if hasattr(self, 'viewer_close_btn'):
+            self.viewer_close_btn.setEnabled(file_open)
+        if hasattr(self, 'viewer_save_btn'):
+            self.viewer_save_btn.setEnabled(file_open and self.is_modified)
 
     def close_current_file(self, show_message: bool = True):
         """Close and clear the currently loaded NIST file."""
@@ -359,12 +470,35 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(self.base_title)
         self.update_actions_state(False)
         self.home_view.set_current_file(None)
-        self.switch_to_home()
+        self._update_viewer_file_label(None)
+        self.pdf_view.set_current_file(None)
+        self.pdf_view.clear_preview()
         self.is_modified = False
         self.last_change = None
 
         if show_message:
-            self.status_bar.showMessage("Closed current NIST file", 4000)
+            self.status_bar.showMessage("Fichier ferme", 4000)
+
+    def _update_viewer_file_label(self, path: str = None):
+        """Update the file label in viewer header."""
+        if hasattr(self, 'viewer_file_label'):
+            if path:
+                name = Path(path).name
+                self.viewer_file_label.setText(f"Fichier : {name}")
+            else:
+                self.viewer_file_label.setText("Aucun fichier")
+
+    def _update_pdf_preview(self, nist_file=None):
+        """Generate and display PDF preview."""
+        if nist_file is None:
+            self.pdf_view.clear_preview()
+            return
+
+        preview_img, error = self.pdf_controller.generate_preview(nist_file)
+        if preview_img:
+            self.pdf_view.set_preview_image(preview_img)
+        else:
+            self.pdf_view.clear_preview()
 
     def dragEnterEvent(self, event):
         """Accept drag if it contains a supported local file."""
@@ -457,10 +591,14 @@ class MainWindow(QMainWindow):
             self.refresh_recent_entries()
             self.home_view.set_current_file(file_path, "viewer")
             self.pdf_view.set_current_file(file_path)
+            self._update_pdf_preview(nist_file)
+            self._update_viewer_file_label(file_path)
             self.is_modified = False
             self.last_change = None
             self._refresh_title()
-            self.switch_to_viewer()
+            # Only switch to viewer if we're on home page
+            if self.active_mode == "home":
+                self.switch_to_viewer()
         else:
             # Show error
             details = self.file_controller.format_last_error()
@@ -545,17 +683,17 @@ class MainWindow(QMainWindow):
         """Show about dialog."""
         QMessageBox.about(
             self,
-            f"À propos de {APP_NAME}",
+            f"A propos de {APP_NAME}",
             f"<h2>{APP_NAME} {APP_VERSION}</h2>"
-            "<p>Visualiseur/éditeur de fichiers ANSI/NIST-ITL</p>"
-            "<p>Fonctionnalités :</p>"
+            "<p>Suite d'outils biometriques NIST</p>"
+            "<p><b>Outils integres :</b></p>"
             "<ul>"
-            "<li>Visualisation des fichiers ANSI/NIST-ITL</li>"
-            "<li>Affichage/édition des données Type-2</li>"
-            "<li>Affichage des images biométriques</li>"
-            "<li>Export Signa Multiple automatisé</li>"
+            "<li><b>NIST-Viewer</b> : Visualisation et edition de fichiers ANSI/NIST-ITL</li>"
+            "<li><b>NIST-Compare</b> : Comparaison cote a cote d'images biometriques</li>"
+            "<li><b>NIST-2-PDF</b> : Export de releves decadactylaires PDF</li>"
+            "<li><b>Image-2-NIST</b> : Conversion d'images en fichiers NIST (a venir)</li>"
             "</ul>"
-            "<p>Motorisé par nistitl (Idemia) et PyQt5</p>"
+            "<p>Motorise par nistitl (Idemia) et PyQt5</p>"
         )
 
     def show_export_info(self):
@@ -618,7 +756,13 @@ class MainWindow(QMainWindow):
         self.active_mode = "comparison"
         self.last_non_home_mode = "comparison"
         self.stacked_widget.setCurrentIndex(3)
-        self.status_bar.showMessage("Comparaison", 3000)
+        self.status_bar.showMessage("NIST-Compare", 3000)
+
+    def switch_to_image2nist(self):
+        """Show Image-2-NIST view (placeholder)."""
+        self.active_mode = "image2nist"
+        self.stacked_widget.setCurrentIndex(4)
+        self.status_bar.showMessage("Image-2-NIST (en developpement)", 3000)
 
     def on_open_recent(self, path: str):
         """Handle opening a recent file from HomeView."""
@@ -643,14 +787,13 @@ class MainWindow(QMainWindow):
     def on_mode_requested(self, mode: str):
         """Handle mode card selection from HomeView."""
         if mode == "viewer":
-            if self.file_controller.is_file_open():
-                self.switch_to_viewer()
-            else:
-                self.open_file()
+            self.switch_to_viewer()
         elif mode == "comparison":
             self.switch_to_comparison()
         elif mode == "pdf":
             self.switch_to_pdf_view()
+        elif mode == "image2nist":
+            self.switch_to_image2nist()
 
     def on_resume_last_mode(self):
         """Resume last non-home mode when a file is open."""
@@ -659,6 +802,10 @@ class MainWindow(QMainWindow):
             return
         if self.last_non_home_mode == "viewer":
             self.switch_to_viewer()
+        elif self.last_non_home_mode == "comparison":
+            self.switch_to_comparison()
+        elif self.last_non_home_mode == "pdf":
+            self.switch_to_pdf_view()
         else:
             self.switch_to_viewer()
 
@@ -749,6 +896,32 @@ class MainWindow(QMainWindow):
         self._refresh_title()
         self.status_bar.showMessage("Dernier changement annulé", 3000)
 
+    def save_file(self):
+        """Save current file to its original path."""
+        if not self.file_controller.is_file_open():
+            QMessageBox.information(self, "Aucun fichier", "Ouvrez un fichier avant d'enregistrer.")
+            return
+
+        current_path = self.file_controller.current_filepath
+        if not current_path:
+            # Fall back to save as if no path available
+            self.save_file_as()
+            return
+
+        current_file = self.file_controller.get_current_file()
+        if not current_file:
+            return
+
+        success = current_file.export(current_path)
+        if success:
+            self.is_modified = False
+            self.last_change = None
+            self._refresh_title()
+            self.update_actions_state(True)
+            self.status_bar.showMessage(f"Sauvegardé: {current_path}", 4000)
+        else:
+            QMessageBox.critical(self, "Erreur", "Impossible de sauvegarder le fichier.")
+
     def save_file_as(self):
         """Save current file to a new path."""
         if not self.file_controller.is_file_open():
@@ -773,6 +946,7 @@ class MainWindow(QMainWindow):
             self.is_modified = False
             self.last_change = None
             self._refresh_title()
+            self.update_actions_state(True)
             self.status_bar.showMessage(f"Enregistré: {output_path}", 4000)
             self.recent_files.add(output_path, last_mode="viewer", summary_types=current_file.get_record_types())
             self.refresh_recent_entries()

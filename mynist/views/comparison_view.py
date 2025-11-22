@@ -48,6 +48,7 @@ from mynist.models.nist_file import NISTFile
 from mynist.utils.image_tools import locate_image_payload, detect_image_format, exif_transpose
 from mynist.utils.image_codecs import decode_wsq, decode_jpeg2000
 from mynist.utils.biometric_labels import get_short_label_fr
+from mynist.utils.design_tokens import load_svg_icon
 
 
 # Constantes pour les annotations typées
@@ -463,6 +464,8 @@ class AnnotatableView(QGraphicsView):
 class ComparisonView(QWidget):
     """Vue de comparaison côte à côte avec calibration DPI et rééchantillonnage."""
 
+    back_requested = pyqtSignal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         # État des images (PIL originales + DPI calibré + navigation NIST)
@@ -516,11 +519,6 @@ class ComparisonView(QWidget):
         self._adjust_parent = None
         self.grid_enabled = False
         self.grid_items = {"left": [], "right": []}
-        self.blink_timer = QTimer(self)
-        self.blink_timer.setInterval(600)
-        self.blink_timer.timeout.connect(self._blink_tick)
-        self._blink_state = True
-
         self._build_ui()
         self._connect_signals()
 
@@ -647,6 +645,17 @@ class ComparisonView(QWidget):
         toolbar.setStyleSheet("QToolBar { spacing: 6px; }")
 
         # ═══════════════════════════════════════════════════════════════════
+        # Bouton retour au Hub
+        # ═══════════════════════════════════════════════════════════════════
+        self.back_action = QAction("Hub", self)
+        self.back_action.setToolTip("Retour au hub")
+        self._set_icon(self.back_action, "home")
+        self.back_action.triggered.connect(self.back_requested.emit)
+        toolbar.addAction(self.back_action)
+
+        toolbar.addSeparator()
+
+        # ═══════════════════════════════════════════════════════════════════
         # Groupe 1 : Modes (Main / Annoter / Mesurer)
         # ═══════════════════════════════════════════════════════════════════
         mode_group = QActionGroup(self)
@@ -711,7 +720,8 @@ class ComparisonView(QWidget):
 
         self.grid_action = QAction("Grille", self)
         self.grid_action.setCheckable(True)
-        self.grid_action.setToolTip("Afficher une grille calibrée")
+        self.grid_action.setToolTip("Afficher une grille calibree")
+        self._set_icon(self.grid_action, "grid")
         self.grid_action.toggled.connect(self._on_grid_toggled)
         toolbar.addAction(self.grid_action)
 
@@ -732,12 +742,6 @@ class ComparisonView(QWidget):
         self.overlay_slider.setValue(int(self.overlay_alpha * 100))
         self.overlay_slider.setFixedWidth(140)
         self.overlay_slider.valueChanged.connect(self._on_overlay_alpha_changed)
-
-        self.blink_action = QAction("Blink", self)
-        self.blink_action.setCheckable(True)
-        self.blink_action.setToolTip("Alterner gauche/droite rapidement")
-        self.blink_action.toggled.connect(self._on_blink_toggled)
-        toolbar.addAction(self.blink_action)
 
         toolbar.addSeparator()
 
@@ -956,24 +960,42 @@ class ComparisonView(QWidget):
         self._set_nist_nav_enabled(side, True)
 
     def _build_unified_panel(self) -> QWidget:
-        """Panneau unifié réorganisé horizontalement."""
+        """Panneau unifie reorganise horizontalement avec style ameliore."""
         widget = QWidget()
+        widget.setStyleSheet("""
+            QFrame.adjustSection {
+                background: palette(base);
+                border: 1px solid palette(mid);
+                border-radius: 8px;
+            }
+            QLabel.sectionTitle {
+                font-weight: bold;
+                font-size: 13px;
+                padding-bottom: 4px;
+            }
+            QLabel.sectionHint {
+                color: palette(mid);
+                font-size: 11px;
+            }
+        """)
 
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(10, 10, 10, 10)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(12)
 
-        self.overlay_mode_label = QLabel("Modification du calque")
-        self.overlay_mode_label.setStyleSheet("font-weight: bold;")
+        self.overlay_mode_label = QLabel("Mode Overlay : modification du calque superpose")
+        self.overlay_mode_label.setStyleSheet("font-weight: bold; color: #2563eb; padding: 6px; background: #dbeafe; border-radius: 4px;")
         self.overlay_mode_label.setVisible(False)
         main_layout.addWidget(self.overlay_mode_label)
 
         # Bandeau cible
         self.toggle_frame = QFrame()
+        self.toggle_frame.setProperty("class", "adjustSection")
         toggle_layout = QHBoxLayout()
-        toggle_layout.setContentsMargins(12, 8, 12, 8)
-        toggle_layout.setSpacing(12)
-        title_toggle = QLabel("Appliquer à")
+        toggle_layout.setContentsMargins(12, 10, 12, 10)
+        toggle_layout.setSpacing(16)
+        title_toggle = QLabel("Appliquer a :")
+        title_toggle.setStyleSheet("font-weight: bold;")
         toggle_layout.addWidget(title_toggle)
         self.side_toggle_group = QButtonGroup(self)
         self.left_radio = QRadioButton("Image gauche")
@@ -989,23 +1011,28 @@ class ComparisonView(QWidget):
         main_layout.addWidget(self.toggle_frame)
 
         row = QHBoxLayout()
-        row.setSpacing(10)
+        row.setSpacing(12)
 
         # Bloc Calibration / Resample
         calib_group = QFrame()
+        calib_group.setProperty("class", "adjustSection")
         calib_layout = QVBoxLayout()
-        calib_layout.setContentsMargins(12, 10, 12, 10)
+        calib_layout.setContentsMargins(14, 12, 14, 12)
         calib_layout.setSpacing(8)
-        calib_title = QLabel("Calibration & Resample")
+        calib_title = QLabel("Calibration")
+        calib_title.setProperty("class", "sectionTitle")
         calib_layout.addWidget(calib_title)
-        calib_hint = QLabel("Calibrez 2 points puis cible DPI.")
-        calib_layout.addWidget(calib_hint)
-        self.unified_dpi_label = QLabel("DPI : Non calibré")
+        self.unified_dpi_label = QLabel("DPI : Non calibre")
+        self.unified_dpi_label.setStyleSheet("font-weight: bold; color: #059669;")
         calib_layout.addWidget(self.unified_dpi_label)
         calib_btn = QPushButton("Calibrer (2 points)")
-        calib_btn.setToolTip("Cliquez 2 points sur l'image et entrez la distance réelle en mm")
+        calib_btn.setToolTip("Cliquez 2 points sur l'image et entrez la distance reelle en mm")
         calib_btn.clicked.connect(self._start_calibration_unified)
         calib_layout.addWidget(calib_btn)
+        calib_layout.addSpacing(8)
+        resample_label = QLabel("Reechantillonnage")
+        resample_label.setProperty("class", "sectionTitle")
+        calib_layout.addWidget(resample_label)
         resample_row = QHBoxLayout()
         resample_row.setSpacing(6)
         self.unified_target_dpi = QSpinBox()
@@ -1014,55 +1041,59 @@ class ComparisonView(QWidget):
         self.unified_target_dpi.setSuffix(" DPI")
         resample_row.addWidget(QLabel("Cible :"))
         resample_row.addWidget(self.unified_target_dpi)
-        resample_btn = QPushButton("Rééchantillonner")
+        calib_layout.addLayout(resample_row)
+        resample_btn = QPushButton("Reechantillonner")
         resample_btn.setToolTip("Convertir l'image au DPI cible")
         resample_btn.clicked.connect(self._resample_image_unified)
-        resample_row.addWidget(resample_btn)
-        calib_layout.addLayout(resample_row)
+        calib_layout.addWidget(resample_btn)
+        calib_layout.addStretch()
         calib_group.setLayout(calib_layout)
         row.addWidget(calib_group, 1)
 
-        # Bloc Améliorations
+        # Bloc Ameliorations
         enhance_group = QFrame()
+        enhance_group.setProperty("class", "adjustSection")
         enhance_layout = QVBoxLayout()
-        enhance_layout.setContentsMargins(12, 10, 12, 10)
-        enhance_layout.setSpacing(8)
-        title_enh = QLabel("Améliorations")
+        enhance_layout.setContentsMargins(14, 12, 14, 12)
+        enhance_layout.setSpacing(6)
+        title_enh = QLabel("Ameliorations")
+        title_enh.setProperty("class", "sectionTitle")
         enhance_layout.addWidget(title_enh)
-        enhance_layout.addWidget(QLabel("Luminosité"))
+        enhance_layout.addWidget(QLabel("Luminosite"))
         self.unified_brightness = QSlider(Qt.Horizontal)
         self.unified_brightness.setRange(-100, 100)
         self.unified_brightness.setValue(0)
-        self.unified_brightness.setToolTip("Luminosité (-100 à +100)")
+        self.unified_brightness.setToolTip("Luminosite (-100 a +100)")
         self.unified_brightness.valueChanged.connect(self._on_unified_enhancement_changed)
         enhance_layout.addWidget(self.unified_brightness)
         enhance_layout.addWidget(QLabel("Contraste"))
         self.unified_contrast = QSlider(Qt.Horizontal)
         self.unified_contrast.setRange(50, 200)
         self.unified_contrast.setValue(100)
-        self.unified_contrast.setToolTip("Contraste (0.5 à 2.0)")
+        self.unified_contrast.setToolTip("Contraste (0.5 a 2.0)")
         self.unified_contrast.valueChanged.connect(self._on_unified_enhancement_changed)
         enhance_layout.addWidget(self.unified_contrast)
         enhance_layout.addWidget(QLabel("Gamma"))
         self.unified_gamma = QSlider(Qt.Horizontal)
         self.unified_gamma.setRange(50, 200)
         self.unified_gamma.setValue(100)
-        self.unified_gamma.setToolTip("Gamma (0.5 à 2.0)")
+        self.unified_gamma.setToolTip("Gamma (0.5 a 2.0)")
         self.unified_gamma.valueChanged.connect(self._on_unified_enhancement_changed)
         enhance_layout.addWidget(self.unified_gamma)
         inv_row = QHBoxLayout()
         inv_row.setSpacing(6)
-        self.unified_invert = QPushButton("Inverser (négatif)")
+        self.unified_invert = QPushButton("Inverser")
         self.unified_invert.setCheckable(True)
+        self.unified_invert.setToolTip("Inverser les couleurs (negatif)")
         self.unified_invert.clicked.connect(self._on_unified_enhancement_changed)
         inv_row.addWidget(self.unified_invert)
-        self.bg_remove_btn = QPushButton("Effacer l'arrière-plan")
+        self.bg_remove_btn = QPushButton("Suppr. fond")
         self.bg_remove_btn.setToolTip("Rend transparent le fond uni du calque (overlay)")
         self.bg_remove_btn.clicked.connect(self._remove_background_unified)
         self.bg_remove_btn.setEnabled(False)
         inv_row.addWidget(self.bg_remove_btn)
         enhance_layout.addLayout(inv_row)
-        reset_btn = QPushButton("Réinitialiser")
+        reset_btn = QPushButton("Reinitialiser filtres")
         reset_btn.clicked.connect(self._reset_enhancements_unified)
         enhance_layout.addWidget(reset_btn)
         enhance_group.setLayout(enhance_layout)
@@ -1070,47 +1101,60 @@ class ComparisonView(QWidget):
 
         # Bloc Orientation
         rot_group = QFrame()
+        rot_group.setProperty("class", "adjustSection")
         rot_layout = QVBoxLayout()
-        rot_layout.setContentsMargins(12, 10, 12, 10)
+        rot_layout.setContentsMargins(14, 12, 14, 12)
         rot_layout.setSpacing(8)
-        rot_title = QLabel("Orientation / Miroir")
+        rot_title = QLabel("Orientation")
+        rot_title.setProperty("class", "sectionTitle")
         rot_layout.addWidget(rot_title)
-        rot_buttons = QHBoxLayout()
-        rot_buttons.setSpacing(6)
-        btn_cw = QPushButton("↻ 90°")
-        btn_cw.clicked.connect(lambda: self._rotate_image_unified(90))
-        rot_buttons.addWidget(btn_cw)
-        btn_ccw = QPushButton("↺ 90°")
+        rot_row1 = QHBoxLayout()
+        rot_row1.setSpacing(6)
+        btn_ccw = QPushButton("Rot -90")
+        btn_ccw.setToolTip("Rotation 90 degres sens anti-horaire")
         btn_ccw.clicked.connect(lambda: self._rotate_image_unified(-90))
-        rot_buttons.addWidget(btn_ccw)
-        btn_reset = QPushButton("Reset")
-        btn_reset.clicked.connect(self._reset_rotation_unified)
-        rot_buttons.addWidget(btn_reset)
-        btn_flip_h = QPushButton("Flip H")
+        rot_row1.addWidget(btn_ccw)
+        btn_cw = QPushButton("Rot +90")
+        btn_cw.setToolTip("Rotation 90 degres sens horaire")
+        btn_cw.clicked.connect(lambda: self._rotate_image_unified(90))
+        rot_row1.addWidget(btn_cw)
+        rot_layout.addLayout(rot_row1)
+        rot_row2 = QHBoxLayout()
+        rot_row2.setSpacing(6)
+        btn_flip_h = QPushButton("Miroir H")
+        btn_flip_h.setToolTip("Miroir horizontal")
         btn_flip_h.clicked.connect(lambda: self._flip_image_unified(axis="h"))
-        rot_buttons.addWidget(btn_flip_h)
-        btn_flip_v = QPushButton("Flip V")
+        rot_row2.addWidget(btn_flip_h)
+        btn_flip_v = QPushButton("Miroir V")
+        btn_flip_v.setToolTip("Miroir vertical")
         btn_flip_v.clicked.connect(lambda: self._flip_image_unified(axis="v"))
-        rot_buttons.addWidget(btn_flip_v)
-        rot_layout.addLayout(rot_buttons)
+        rot_row2.addWidget(btn_flip_v)
+        rot_layout.addLayout(rot_row2)
+        btn_reset_rot = QPushButton("Reset orientation")
+        btn_reset_rot.clicked.connect(self._reset_rotation_unified)
+        rot_layout.addWidget(btn_reset_rot)
+        rot_layout.addStretch()
         rot_group.setLayout(rot_layout)
         row.addWidget(rot_group, 1)
 
         # Bloc Actions
         actions_group = QFrame()
+        actions_group.setProperty("class", "adjustSection")
         actions_layout = QVBoxLayout()
-        actions_layout.setContentsMargins(12, 10, 12, 10)
+        actions_layout.setContentsMargins(14, 12, 14, 12)
         actions_layout.setSpacing(8)
-        act_title = QLabel("Actions image")
+        act_title = QLabel("Actions")
+        act_title.setProperty("class", "sectionTitle")
         actions_layout.addWidget(act_title)
-        reset_img_btn = QPushButton("Réinitialiser image")
-        reset_img_btn.setToolTip("Restaurer l'image originale (annule resample, rotation, améliorations)")
+        reset_img_btn = QPushButton("Reset image")
+        reset_img_btn.setToolTip("Restaurer l'image originale (annule tout)")
         reset_img_btn.clicked.connect(self._reset_image_unified)
         actions_layout.addWidget(reset_img_btn)
         export_img_btn = QPushButton("Exporter JPG")
-        export_img_btn.setToolTip("Exporter l'image avec tous les réglages appliqués")
+        export_img_btn.setToolTip("Exporter l'image avec tous les reglages appliques")
         export_img_btn.clicked.connect(self._export_image_unified)
         actions_layout.addWidget(export_img_btn)
+        actions_layout.addStretch()
         actions_group.setLayout(actions_layout)
         row.addWidget(actions_group, 1)
 
@@ -1137,7 +1181,7 @@ class ComparisonView(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(self.adjust_widget)
             self.adjust_popup.setLayout(layout)
-            self.adjust_popup.setFixedWidth(520)
+            self.adjust_popup.setFixedWidth(850)
         # Positionner sous le bouton Ajustements
         btn = self.adjust_button
         if btn:
@@ -1833,12 +1877,6 @@ class ComparisonView(QWidget):
             y += step
         self.grid_items[side] = items
 
-    def _blink_tick(self):
-        self._blink_state = not self._blink_state
-        self.left_view.setVisible(self._blink_state)
-        self.right_view.setVisible(not self._blink_state)
-
-
     # ─────────────────────────────────────────────────────────────────────
     # Modes toolbar
     # ─────────────────────────────────────────────────────────────────────
@@ -1988,7 +2026,7 @@ class ComparisonView(QWidget):
             action.setIcon(self._icon_cache[name])
             return
         if path.exists():
-            icon = QIcon(str(path))
+            icon = load_svg_icon(path, size=24)
             self._icon_cache[name] = icon
             action.setIcon(icon)
 
@@ -1999,7 +2037,7 @@ class ComparisonView(QWidget):
             button.setIcon(self._icon_cache[name])
             return
         if path.exists():
-            icon = QIcon(str(path))
+            icon = load_svg_icon(path, size=24)
             self._icon_cache[name] = icon
             button.setIcon(icon)
 
@@ -2111,7 +2149,6 @@ class ComparisonView(QWidget):
             self.left_radio.blockSignals(False)
             self.right_radio.blockSignals(False)
             self._sync_controls_to_side()
-            self.blink_action.setChecked(False)
             self.right_image_container.setVisible(False)
             self.right_view.setVisible(False)
             self.left_view.setDragMode(QGraphicsView.NoDrag)
@@ -2176,17 +2213,6 @@ class ComparisonView(QWidget):
                 item.setOpacity(self.overlay_alpha)
         if self.overlay_popup:
             self.overlay_popup.adjustSize()
-
-    def _on_blink_toggled(self, checked: bool):
-        if checked:
-            self._blink_state = True
-            self.left_view.setVisible(True)
-            self.right_view.setVisible(False)
-            self.blink_timer.start()
-        else:
-            self.blink_timer.stop()
-            self.left_view.setVisible(True)
-            self.right_view.setVisible(True)
 
     def _scale_annotation_meta(self, side: str, ratio: float) -> List[Dict[str, object]]:
         view = self.left_view if side == "left" else self.right_view

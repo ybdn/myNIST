@@ -1,26 +1,27 @@
-"""Home view (hub) for mode selection and recent files."""
+"""Home view (hub) for mode selection."""
 
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Optional, Dict
 
-from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QPalette
+from PyQt5.QtCore import Qt, pyqtSignal, QSize
+from PyQt5.QtGui import QIcon, QPixmap, QPalette
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QPushButton,
-    QHBoxLayout,
-    QListWidget,
-    QListWidgetItem,
-    QFrame,
     QSizePolicy,
-    QSpacerItem,
+    QGridLayout,
+    QApplication,
 )
+
+from mynist.utils.constants import APP_NAME, APP_VERSION
+from mynist.utils.design_tokens import Typography, Spacing, Radius, load_svg_icon
 
 
 class HomeView(QWidget):
-    """Hub screen with mode cards, drop hint and recent files."""
+    """Hub screen with mode cards."""
 
     open_file_requested = pyqtSignal()
     open_recent_requested = pyqtSignal(str)
@@ -32,211 +33,226 @@ class HomeView(QWidget):
         super().__init__(parent)
         self.current_file: Optional[str] = None
         self.current_mode: str = "viewer"
-        self.setObjectName("HomeRoot")
-        self._apply_theme()
+        self._icon_cache: Dict[str, QIcon] = {}
         self._build_ui()
 
-    def _apply_theme(self):
-        """Compute palette-aware stylesheet for light/dark compatibility."""
-        palette = self.palette()
-        window = palette.color(QPalette.Window)
-        base = palette.color(QPalette.Base)
-        text = palette.color(QPalette.Text)
-        alt = palette.color(QPalette.AlternateBase)
-        border = palette.color(QPalette.Mid)
-        highlight = palette.color(QPalette.Highlight)
+    def _get_icon_path(self, name: str) -> Path:
+        """Return path to hub icon."""
+        return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
-        # Detect dark-ish palette
-        is_dark = window.value() < 96 or base.value() < 96  # 0-255 scale
+    def _is_dark_theme(self) -> bool:
+        """Detect if the OS is using dark theme."""
+        app = QApplication.instance()
+        if app is None:
+            return False
+        palette = app.palette()
+        window_color = palette.color(QPalette.Window)
+        return window_color.lightnessF() < 0.5
 
-        def tweak(color: QColor, factor: int) -> QColor:
-            return color.lighter(factor) if is_dark else color.darker(factor)
+    def _get_logo_path(self) -> Path:
+        """Return path to appropriate logo based on theme."""
+        icons_dir = Path(__file__).parent.parent / "resources" / "icons"
+        if self._is_dark_theme():
+            return icons_dir / "logo-nist-studio-white-short.png"
+        else:
+            return icons_dir / "logo-nist-studio-black-short.png"
 
-        card_bg = tweak(base, 115)
-        card_hover = tweak(base, 130)
-        drop_bg = alt if alt != base else tweak(base, 105)
-        list_bg = tweak(base, 103)
-        hover_border = highlight if highlight.alpha() > 0 else border
+    def _load_icon(self, name: str, size: int = 48) -> QIcon:
+        """Load SVG icon with OS-appropriate color."""
+        cache_key = f"{name}_{size}"
+        if cache_key in self._icon_cache:
+            return self._icon_cache[cache_key]
 
-        self.setStyleSheet(
-            f"""
-            #HomeRoot {{
-                background-color: {window.name()};
-                color: {text.name()};
-            }}
-            #HomeRoot QLabel {{
-                color: {text.name()};
-            }}
-            QPushButton#modeCard {{
-                text-align: left;
-                padding: 12px;
-                border: 1px solid {border.name()};
-                border-radius: 10px;
-                background: {card_bg.name()};
-                color: {text.name()};
-            }}
-            QPushButton#modeCard:hover {{
-                border-color: {hover_border.name()};
-                background: {card_hover.name()};
-            }}
-            QFrame#dropFrame {{
-                background: {drop_bg.name()};
-                color: {text.name()};
-                border: 1px dashed {border.name()};
-                border-radius: 8px;
-            }}
-            QListWidget {{
-                background: {list_bg.name()};
-                color: {text.name()};
-                border: 1px solid {border.name()};
-                border-radius: 6px;
-            }}
-            QListWidget::item:selected {{
-                background: {hover_border.name()};
-                color: {"#ffffff" if is_dark else text.name()};
-            }}
-            """
-        )
+        path = self._get_icon_path(name)
+        icon = load_svg_icon(path, size=size)
+        self._icon_cache[cache_key] = icon
+        return icon
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(16)
+        layout.setContentsMargins(Spacing.XXXXL, Spacing.XXXL, Spacing.XXXXL, Spacing.XXXL)
+        layout.setSpacing(Spacing.XXL)
 
-        self.current_file_label = QLabel("Aucun fichier en cours.")
-        self.current_file_label.setObjectName("currentFileLabel")
-        layout.addWidget(self.current_file_label)
+        # Vertical centering
+        layout.addStretch(1)
 
+        # Header
+        header = self._build_header()
+        layout.addWidget(header)
+
+        layout.addSpacing(Spacing.MD)
+
+        # Mode cards
         cards = self._build_cards()
         layout.addWidget(cards)
 
-        drop = self._build_drop_hint()
-        layout.addWidget(drop)
-
-        recents = self._build_recents()
-        layout.addWidget(recents)
-
-        layout.addStretch()
+        layout.addStretch(2)
         self.setLayout(layout)
 
-    def _build_cards(self) -> QWidget:
+    def _build_header(self) -> QWidget:
+        """Build header with app logo."""
         container = QWidget()
-        hlayout = QHBoxLayout()
-        hlayout.setContentsMargins(0, 0, 0, 0)
-        hlayout.setSpacing(12)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(Spacing.MD)
+        layout.setAlignment(Qt.AlignCenter)
+
+        # Logo
+        logo_label = QLabel()
+        logo_path = self._get_logo_path()
+        if logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            # Scale to reasonable size (max 400px width)
+            scaled = pixmap.scaledToWidth(400, Qt.SmoothTransformation)
+            logo_label.setPixmap(scaled)
+        else:
+            # Fallback to text if logo not found
+            logo_label.setText(APP_NAME)
+            logo_label.setStyleSheet(f"""
+                font-size: {Typography.SIZE_3XL}px;
+                font-weight: {Typography.WEIGHT_BOLD};
+            """)
+        logo_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(logo_label)
+
+        # Version and GitHub link row
+        info_row = QHBoxLayout()
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.setSpacing(Spacing.MD)
+        info_row.setAlignment(Qt.AlignCenter)
+
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
+        info_row.addWidget(version_label)
+
+        # Separator
+        sep_label = QLabel("—")
+        sep_label.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
+        info_row.addWidget(sep_label)
+
+        # GitHub button with icon
+        github_btn = QPushButton("ybdn")
+        github_btn.setCursor(Qt.PointingHandCursor)
+        github_btn.setStyleSheet(f"""
+            QPushButton {{
+                font-size: {Typography.SIZE_MD}px;
+                border: none;
+                background: transparent;
+                padding: {Spacing.XS}px {Spacing.SM}px;
+            }}
+            QPushButton:hover {{
+                text-decoration: underline;
+            }}
+        """)
+        github_icon = self._load_icon("github", 18)
+        if not github_icon.isNull():
+            github_btn.setIcon(github_icon)
+        github_btn.clicked.connect(self._open_github)
+        info_row.addWidget(github_btn)
+
+        layout.addLayout(info_row)
+
+        container.setLayout(layout)
+        return container
+
+    def _build_cards(self) -> QWidget:
+        """Build 4 mode cards in a grid layout."""
+        container = QWidget()
+        container.setMaximumWidth(800)
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(Spacing.LG)
 
         cards_data = [
-            ("Visualiser / Éditer", "Parcours 3 panneaux, inspection et édition Type-2", "viewer"),
-            ("Comparer", "Côte à côte, points, recalage DPI", "comparison"),
-            ("Exporter relevé PDF", "Décadactylaire A4, métadonnées Type-1/2", "pdf"),
+            ("NIST-Viewer", "Visualiser et editer\ndes fichiers NIST", "viewer", "viewer", True),
+            ("NIST-Compare", "Comparer cote a cote\ndeux images biometriques", "comparison", "compare", True),
+            ("NIST-2-PDF", "Exporter un releve\ndecadactylaire PDF", "pdf", "pdf", True),
+            ("Image-2-NIST", "Convertir une image\nen fichier NIST", "image2nist", "image2nist", False),
         ]
 
-        for title, subtitle, mode in cards_data:
-            button = self._make_card_button(title, subtitle, mode)
-            hlayout.addWidget(button)
+        for i, (title, subtitle, mode, icon_name, enabled) in enumerate(cards_data):
+            button = self._make_card_button(title, subtitle, mode, icon_name, enabled)
+            grid.addWidget(button, i // 2, i % 2)
 
-        spacer = QSpacerItem(0, 0, QSizePolicy.Expanding, QSizePolicy.Minimum)
-        hlayout.addItem(spacer)
+        container.setLayout(grid)
 
-        container.setLayout(hlayout)
-        return container
+        # Center wrapper
+        wrapper = QWidget()
+        wrapper_layout = QVBoxLayout()
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.addWidget(container, 0, Qt.AlignCenter)
+        wrapper.setLayout(wrapper_layout)
 
-    def _make_card_button(self, title: str, subtitle: str, mode: str) -> QPushButton:
+        return wrapper
+
+    def _make_card_button(self, title: str, subtitle: str, mode: str, icon_name: str, enabled: bool) -> QPushButton:
+        """Create a card button with styled title and subtitle."""
         button = QPushButton()
-        button.setObjectName("modeCard")
-        button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        button.setFixedSize(220, 120)
-        button.setText(f"{title}\n{subtitle}")
-        button.clicked.connect(lambda: self.mode_requested.emit(mode))
+        button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        button.setFixedHeight(160)
+        button.setMinimumWidth(300)
+        button.setEnabled(enabled)
+        button.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
+
+        # Style with OS colors + layout tokens
+        button.setStyleSheet(f"""
+            QPushButton {{
+                border-radius: {Radius.XL}px;
+                padding: {Spacing.XL}px;
+                text-align: left;
+            }}
+        """)
+
+        # Create layout for card content
+        layout = QVBoxLayout()
+        layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
+        layout.setSpacing(Spacing.SM)
+
+        # Icon row
+        icon_label = QLabel()
+        icon = self._load_icon(icon_name, 40)
+        if not icon.isNull():
+            icon_label.setPixmap(icon.pixmap(40, 40))
+        icon_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_label)
+
+        # Title - bold and bigger
+        title_label = QLabel(title)
+        title_label.setStyleSheet(f"""
+            font-size: {Typography.SIZE_LG}px;
+            font-weight: {Typography.WEIGHT_BOLD};
+        """)
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        # Subtitle - normal size
+        subtitle_text = subtitle.replace("\n", " ")
+        if not enabled:
+            subtitle_text += " (Bientot disponible)"
+        subtitle_label = QLabel(subtitle_text)
+        subtitle_label.setStyleSheet(f"font-size: {Typography.SIZE_SM}px;")
+        subtitle_label.setAlignment(Qt.AlignCenter)
+        subtitle_label.setWordWrap(True)
+        layout.addWidget(subtitle_label)
+
+        button.setLayout(layout)
+
+        if enabled:
+            button.clicked.connect(lambda checked, m=mode: self.mode_requested.emit(m))
+
         return button
 
-    def _build_drop_hint(self) -> QWidget:
-        frame = QFrame()
-        frame.setObjectName("dropFrame")
-        frame.setFrameShape(QFrame.StyledPanel)
-        layout = QVBoxLayout()
-        layout.setContentsMargins(12, 12, 12, 12)
-
-        hint = QLabel("Glissez un fichier .nist/.eft/.an2 ici pour ouvrir\nou utilisez « Parcourir… »")
-        hint.setAlignment(Qt.AlignCenter)
-        layout.addWidget(hint)
-
-        frame.setLayout(layout)
-        return frame
-
-    def _build_recents(self) -> QWidget:
-        container = QWidget()
-        vlayout = QVBoxLayout()
-        vlayout.setContentsMargins(0, 0, 0, 0)
-        vlayout.setSpacing(8)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(0, 0, 0, 0)
-        title = QLabel("<b>Derniers fichiers</b>")
-        header.addWidget(title)
-        header.addStretch()
-
-        browse_button = QPushButton("Parcourir…")
-        browse_button.clicked.connect(self.open_file_requested.emit)
-        header.addWidget(browse_button)
-
-        clear_button = QPushButton("Vider la liste")
-        clear_button.clicked.connect(self.clear_recents_requested.emit)
-        header.addWidget(clear_button)
-
-        vlayout.addLayout(header)
-
-        self.recents_list = QListWidget()
-        self.recents_list.itemDoubleClicked.connect(self._on_recent_double_clicked)
-        vlayout.addWidget(self.recents_list)
-
-        container.setLayout(vlayout)
-        return container
-
-    def _on_recent_double_clicked(self, item: QListWidgetItem):
-        path = item.data(Qt.UserRole)
-        if path:
-            self.open_recent_requested.emit(path)
-
-    def _emit_resume(self):
-        if self.current_file:
-            self.resume_requested.emit()
-
     def set_current_file(self, path: Optional[str], mode: str = "viewer"):
-        """Update banner and resume state."""
+        """Update current file state (for internal tracking)."""
         self.current_file = path
         self.current_mode = mode
-        has_file = path is not None
-        if has_file:
-            name = Path(path).name
-            self.current_file_label.setText(f"Fichier en cours : {name} ({path}) — mode {mode}")
-        else:
-            self.current_file_label.setText("Aucun fichier en cours.")
 
-    def set_recent_entries(self, entries: List[Dict[str, object]]):
-        """Populate recent list."""
-        self.recents_list.clear()
-        for item in entries:
-            path = str(item.get("path", ""))
-            exists = bool(item.get("exists", True))
-            summary_types = item.get("summary_types") or []
+    def set_recent_entries(self, entries):
+        """Compatibility stub."""
+        pass
 
-            name = Path(path).name
-            subtext = f"Types: {', '.join(str(t) for t in summary_types)}" if summary_types else ""
-            status = " (introuvable)" if not exists else ""
-            display = f"{name}{status}"
-
-            list_item = QListWidgetItem(display)
-            list_item.setData(Qt.UserRole, path)
-            tooltip_lines = [path]
-            opened_at = item.get("opened_at")
-            if opened_at:
-                tooltip_lines.append(f"Ouv. : {opened_at}")
-            if subtext:
-                tooltip_lines.append(subtext)
-            list_item.setToolTip("\n".join(tooltip_lines))
-
-            if not exists:
-                list_item.setForeground(Qt.gray)
-
-            self.recents_list.addItem(list_item)
+    def _open_github(self):
+        """Open GitHub profile in browser."""
+        from PyQt5.QtGui import QDesktopServices
+        from PyQt5.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl("https://github.com/ybdn"))

@@ -33,6 +33,18 @@ class FilePanel(QWidget):
         self.tree_widget = QTreeWidget()
         self.tree_widget.setHeaderLabel("Structure des enregistrements")
         self.tree_widget.itemClicked.connect(self.on_item_clicked)
+        # Improve readability with more spacing between items
+        self.tree_widget.setStyleSheet("""
+            QTreeWidget::item {
+                padding: 6px 4px;
+                margin: 2px 0;
+            }
+            QTreeWidget::item:selected {
+                background-color: palette(highlight);
+                color: palette(highlighted-text);
+            }
+        """)
+        self.tree_widget.setIndentation(24)
         layout.addWidget(self.tree_widget)
 
         self.setLayout(layout)
