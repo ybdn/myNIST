@@ -48,6 +48,7 @@ from mynist.models.nist_file import NISTFile
 from mynist.utils.image_tools import locate_image_payload, detect_image_format, exif_transpose
 from mynist.utils.image_codecs import decode_wsq, decode_jpeg2000
 from mynist.utils.biometric_labels import get_short_label_fr
+from mynist.utils.nbis_matcher import nbis_auto_match, NBISMatchResult, NBISMatchPair
 
 
 # Constantes pour les annotations typées
@@ -520,6 +521,8 @@ class ComparisonView(QWidget):
         self.blink_timer.setInterval(600)
         self.blink_timer.timeout.connect(self._blink_tick)
         self._blink_state = True
+        self.match_items: Dict[str, List[object]] = {"left": [], "right": []}
+        self._last_match_result: Optional[NBISMatchResult] = None
 
         self._build_ui()
         self._connect_signals()
@@ -793,6 +796,17 @@ class ComparisonView(QWidget):
         self._set_icon(self.reset_zoom_action, "reset_zoom")
         self.reset_zoom_action.triggered.connect(self.reset_zoom)
         toolbar.addAction(self.reset_zoom_action)
+
+        toolbar.addSeparator()
+
+        # ═══════════════════════════════════════════════════════════════════
+        # Groupe 5 : Auto-match
+        # ═══════════════════════════════════════════════════════════════════
+        self.auto_match_action = QAction("Auto-match", self)
+        self.auto_match_action.setToolTip("Auto-match empreintes (NBIS mindtct + bozorth3)")
+        self._set_icon(self.auto_match_action, "match")
+        self.auto_match_action.triggered.connect(self._on_auto_match)
+        toolbar.addAction(self.auto_match_action)
 
         # ═══════════════════════════════════════════════════════════════════
         # Spacer → pousse les actions suivantes à droite
@@ -1698,6 +1712,8 @@ class ComparisonView(QWidget):
         measurements_meta: Optional[List[Dict[str, object]]] = None,
     ):
         """Affiche une image PIL dans la scène (et restaure annotations/mesures si fournies)."""
+        # En cas de re-render, nettoyer les marqueurs d'auto-match (scènes vont être vidées)
+        self._clear_match_overlays()
         pix = self._pil_to_pixmap(pil_img)
         if side == "left":
             view = self.left_view
@@ -1838,6 +1854,99 @@ class ComparisonView(QWidget):
         self.left_view.setVisible(self._blink_state)
         self.right_view.setVisible(not self._blink_state)
 
+    # ─────────────────────────────────────────────────────────────────────
+    # Auto-match (ORB + RANSAC)
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _clear_match_overlays(self):
+        """Supprime les marqueurs d'auto-match des scènes."""
+        for side in ("left", "right"):
+            scene = self.left_scene if side == "left" else self.right_scene
+            for item in self.match_items.get(side, []):
+                try:
+                    if hasattr(item, "scene") and item.scene() == scene:
+                        scene.removeItem(item)
+                except RuntimeError:
+                    pass
+            self.match_items[side] = []
+
+    def _show_detected_minutiae(self, side: str, points: List[Tuple[float, float]], color: QColor, limit: int = 300):
+        """Affiche les minuties détectées (sans appariement)."""
+        scene = self.left_scene if side == "left" else self.right_scene
+        if scene is None or not points:
+            return
+        r = 4
+        pen = QPen(color)
+        pen.setWidth(1)
+        brush = QBrush(QColor(color.red(), color.green(), color.blue(), 90))
+        for idx, (x, y) in enumerate(points):
+            if idx >= limit:
+                break
+            circ = scene.addEllipse(x - r, y - r, r * 2, r * 2, pen, brush)
+            circ.setZValue(184)
+            self.match_items[side].append(circ)
+
+    def _show_match_pairs(self, pairs: List[NBISMatchPair]):
+        """Dessine des points numérotés pour les paires matchées."""
+        if not pairs:
+            return
+        pen = QPen(QColor(22, 163, 74))
+        pen.setWidth(2)
+        brush = QBrush(QColor(22, 163, 74, 60))
+        for idx, pair in enumerate(pairs, start=1):
+            for side, pt in (("left", pair.left), ("right", pair.right)):
+                scene = self.left_scene if side == "left" else self.right_scene
+                if scene is None:
+                    continue
+                r = 6
+                circ = scene.addEllipse(pt[0] - r, pt[1] - r, r * 2, r * 2, pen, brush)
+                circ.setZValue(185)
+                txt = scene.addSimpleText(str(idx))
+                txt.setBrush(QBrush(QColor(22, 163, 74)))
+                txt.setPos(pt[0] + r, pt[1] - (r * 1.5))
+                txt.setZValue(186)
+                self.match_items[side].extend([circ, txt])
+
+    def _on_auto_match(self):
+        """Lance l'auto-match (ORB) et affiche les paires retenues."""
+        left_img = self._get_processed_image("left")
+        right_img = self._get_processed_image("right")
+        if left_img is None or right_img is None:
+            QMessageBox.warning(self, "Auto-match", "Chargez d'abord une image à gauche et à droite.")
+            return
+
+        # Forcer l'arrêt du blink/overlay pour éviter les conflits d'affichage
+        if self.overlay_action.isChecked():
+            self.overlay_action.setChecked(False)
+        if self.blink_action.isChecked():
+            self.blink_action.setChecked(False)
+
+        self._clear_match_overlays()
+        result = nbis_auto_match(
+            left_img,
+            right_img,
+            dpi_left=self.image_state["left"].get("dpi"),
+            dpi_right=self.image_state["right"].get("dpi"),
+        )
+        self._last_match_result = result
+
+        if not result.ok:
+            QMessageBox.warning(self, "Auto-match", result.message)
+            return
+
+        # Afficher minuties détectées (limitées)
+        self._show_detected_minutiae("left", result.minutiae_left, QColor(22, 163, 74))
+        self._show_detected_minutiae("right", result.minutiae_right, QColor(37, 99, 235))
+
+        if result.pairs:
+            self._show_match_pairs(result.pairs)
+
+        summary_lines = [
+            f"Score bozorth3 : {result.score}",
+            f"Minuties détectées : G={len(result.minutiae_left)} / D={len(result.minutiae_right)}",
+            "NBIS mindtct + bozorth3",
+        ]
+        QMessageBox.information(self, "Auto-match", "\n".join(summary_lines))
 
     # ─────────────────────────────────────────────────────────────────────
     # Modes toolbar
