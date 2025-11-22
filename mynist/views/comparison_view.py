@@ -1192,7 +1192,7 @@ class ComparisonView(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(self.adjust_widget)
             self.adjust_popup.setLayout(layout)
-            self.adjust_popup.setFixedWidth(520)
+            self.adjust_popup.setFixedWidth(850)
         # Positionner sous le bouton Ajustements
         btn = self.adjust_button
         if btn:
