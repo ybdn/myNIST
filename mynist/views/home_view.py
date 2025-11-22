@@ -135,11 +135,11 @@ class HomeView(QWidget):
         return wrapper
 
     def _make_card_button(self, title: str, subtitle: str, mode: str, icon_name: str, enabled: bool) -> QPushButton:
-        """Create a card button."""
+        """Create a card button with styled title and subtitle."""
         button = QPushButton()
         button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button.setFixedHeight(140)
-        button.setMinimumWidth(280)
+        button.setFixedHeight(160)
+        button.setMinimumWidth(300)
         button.setEnabled(enabled)
         button.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
 
@@ -148,21 +148,43 @@ class HomeView(QWidget):
             QPushButton {{
                 border-radius: {Radius.XL}px;
                 padding: {Spacing.XL}px;
-                font-size: {Typography.SIZE_MD}px;
-                text-align: center;
+                text-align: left;
             }}
         """)
 
-        # Load icon
-        icon = self._load_icon(icon_name, 48)
-        button.setIcon(icon)
-        button.setIconSize(QSize(48, 48))
+        # Create layout for card content
+        layout = QVBoxLayout()
+        layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
+        layout.setSpacing(Spacing.SM)
 
-        # Set text
-        text = f"{title}\n\n{subtitle}"
+        # Icon row
+        icon_label = QLabel()
+        icon = self._load_icon(icon_name, 40)
+        if not icon.isNull():
+            icon_label.setPixmap(icon.pixmap(40, 40))
+        icon_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_label)
+
+        # Title - bold and bigger
+        title_label = QLabel(title)
+        title_label.setStyleSheet(f"""
+            font-size: {Typography.SIZE_LG}px;
+            font-weight: {Typography.WEIGHT_BOLD};
+        """)
+        title_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title_label)
+
+        # Subtitle - normal size
+        subtitle_text = subtitle.replace("\n", " ")
         if not enabled:
-            text += "\n\n(Bientot disponible)"
-        button.setText(text)
+            subtitle_text += " (Bientot disponible)"
+        subtitle_label = QLabel(subtitle_text)
+        subtitle_label.setStyleSheet(f"font-size: {Typography.SIZE_SM}px;")
+        subtitle_label.setAlignment(Qt.AlignCenter)
+        subtitle_label.setWordWrap(True)
+        layout.addWidget(subtitle_label)
+
+        button.setLayout(layout)
 
         if enabled:
             button.clicked.connect(lambda checked, m=mode: self.mode_requested.emit(m))

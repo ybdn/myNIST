@@ -573,7 +573,9 @@ class MainWindow(QMainWindow):
             self.is_modified = False
             self.last_change = None
             self._refresh_title()
-            self.switch_to_viewer()
+            # Only switch to viewer if we're on home page
+            if self.active_mode == "home":
+                self.switch_to_viewer()
         else:
             # Show error
             details = self.file_controller.format_last_error()
