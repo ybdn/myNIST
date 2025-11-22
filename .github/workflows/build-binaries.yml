@@ -290,6 +290,26 @@ jobs:
             - name: Build application (.app bundle)
               run: pyinstaller nist-studio.spec
 
+            - name: Verify NBIS in bundle
+              run: |
+                  APP_PATH="dist/${{ env.APP_NAME }}.app"
+                  echo "=== Bundle structure ==="
+                  ls -la "$APP_PATH/Contents/"
+
+                  echo "=== Looking for dwsq in bundle ==="
+                  find "$APP_PATH" -name "dwsq" -type f 2>/dev/null || true
+
+                  # Vérifier que dwsq existe quelque part dans le bundle
+                  DWSQ_PATH=$(find "$APP_PATH" -name "dwsq" -type f 2>/dev/null | head -1)
+                  if [ -z "$DWSQ_PATH" ]; then
+                      echo "ERROR: dwsq not found in .app bundle!"
+                      echo "Contents of Resources:"
+                      ls -laR "$APP_PATH/Contents/Resources/" 2>/dev/null | head -50 || true
+                      exit 1
+                  fi
+                  echo "✓ Found dwsq at: $DWSQ_PATH"
+                  file "$DWSQ_PATH"
+
             - name: Code sign application (ad-hoc)
               run: |
                   APP_PATH="dist/${{ env.APP_NAME }}.app"

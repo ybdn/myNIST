@@ -61,62 +61,76 @@ def _decode_wsq_python(data: bytes) -> Tuple[Optional[Image.Image], str]:
 def _find_dwsq() -> Optional[str]:
     """Trouve l'exécutable dwsq (bundled ou système)."""
     import sys
+    import logging
+
+    logger = logging.getLogger(__name__)
+
+    if sys.platform == 'win32':
+        dwsq_name = 'dwsq.exe'
+    else:
+        dwsq_name = 'dwsq'
+
+    possible_paths = []
 
     # 1. Chercher dans le bundle PyInstaller
     if getattr(sys, 'frozen', False):
         # Application packagée
         bundle_dir = Path(sys._MEIPASS)  # type: ignore
+        exe_dir = Path(sys.executable).parent
 
-        if sys.platform == 'win32':
-            dwsq_name = 'dwsq.exe'
-        else:
-            dwsq_name = 'dwsq'
+        logger.debug(f"PyInstaller frozen app detected")
+        logger.debug(f"  _MEIPASS: {bundle_dir}")
+        logger.debug(f"  executable: {sys.executable}")
 
-        # Chemins possibles selon le type de packaging
-        possible_paths = [
-            bundle_dir / 'nbis' / 'bin' / dwsq_name,  # onefolder standard
-        ]
+        # Chemin standard (onefolder COLLECT)
+        possible_paths.append(bundle_dir / 'nbis' / 'bin' / dwsq_name)
 
-        # Pour macOS .app bundle, explorer toute la structure
+        # Pour macOS .app bundle, la structure est:
+        # NIST-Studio.app/Contents/MacOS/nist-studio (executable)
+        # NIST-Studio.app/Contents/Resources/nbis/bin/dwsq (data)
         if sys.platform == 'darwin':
-            # _MEIPASS peut pointer vers différents endroits selon PyInstaller version
-            # Essayer de remonter à la racine .app et chercher partout
-            current = bundle_dir
-            for _ in range(5):  # Max 5 niveaux pour trouver .app
-                if current.suffix == '.app' or current.name == 'Contents':
-                    if current.suffix == '.app':
-                        contents = current / 'Contents'
-                    else:
-                        contents = current
-                    # Chercher dans tous les sous-dossiers possibles
+            # Méthode 1: Partir de l'executable (plus fiable)
+            # exe_dir = .../NIST-Studio.app/Contents/MacOS
+            contents_dir = exe_dir.parent  # .../NIST-Studio.app/Contents
+            possible_paths.extend([
+                contents_dir / 'Resources' / 'nbis' / 'bin' / dwsq_name,
+                contents_dir / 'Frameworks' / 'nbis' / 'bin' / dwsq_name,
+                contents_dir / 'MacOS' / 'nbis' / 'bin' / dwsq_name,
+            ])
+
+            # Méthode 2: Partir de _MEIPASS et remonter
+            for parent in [bundle_dir, bundle_dir.parent, bundle_dir.parent.parent]:
+                if parent.name == 'Contents' or parent.suffix == '.app':
+                    contents = parent if parent.name == 'Contents' else parent / 'Contents'
                     possible_paths.extend([
                         contents / 'Resources' / 'nbis' / 'bin' / dwsq_name,
                         contents / 'Frameworks' / 'nbis' / 'bin' / dwsq_name,
-                        contents / 'MacOS' / 'nbis' / 'bin' / dwsq_name,
                     ])
-                    break
-                current = current.parent
-            # Aussi chercher relativement à _MEIPASS
-            possible_paths.extend([
-                bundle_dir.parent / 'Resources' / 'nbis' / 'bin' / dwsq_name,
-                bundle_dir.parent.parent / 'Resources' / 'nbis' / 'bin' / dwsq_name,
-            ])
-
-        for path in possible_paths:
-            if path.exists():
-                return str(path)
 
     # 2. Chercher à côté du script (dev mode)
     script_dir = Path(__file__).parent.parent.parent
-    if sys.platform == 'win32':
-        local = script_dir / 'nbis' / 'bin' / 'dwsq.exe'
-    else:
-        local = script_dir / 'nbis' / 'bin' / 'dwsq'
-    if local.exists():
-        return str(local)
+    possible_paths.append(script_dir / 'nbis' / 'bin' / dwsq_name)
+
+    # Dédupliquer et chercher
+    seen = set()
+    for path in possible_paths:
+        path_str = str(path.resolve()) if path.exists() else str(path)
+        if path_str in seen:
+            continue
+        seen.add(path_str)
+        logger.debug(f"  Checking: {path} -> exists={path.exists()}")
+        if path.exists():
+            logger.info(f"Found dwsq at: {path}")
+            return str(path)
 
     # 3. Chercher dans le PATH système
-    return shutil.which("dwsq")
+    system_dwsq = shutil.which("dwsq")
+    if system_dwsq:
+        logger.info(f"Found dwsq in PATH: {system_dwsq}")
+        return system_dwsq
+
+    logger.warning("dwsq not found in any location")
+    return None
 
 
 def _decode_wsq_nbis(data: bytes) -> Tuple[Optional[Image.Image], str]:
