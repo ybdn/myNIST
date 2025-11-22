@@ -79,16 +79,6 @@ class HomeView(QWidget):
         header = self._build_header()
         layout.addWidget(header)
 
-        # Current file status
-        self.current_file_label = QLabel("Aucun fichier ouvert")
-        self.current_file_label.setAlignment(Qt.AlignCenter)
-        self.current_file_label.setStyleSheet(f"""
-            font-size: {Typography.SIZE_SM}px;
-            padding: {Spacing.SM}px {Spacing.LG}px;
-            border-radius: {Radius.MD}px;
-        """)
-        layout.addWidget(self.current_file_label)
-
         layout.addSpacing(Spacing.MD)
 
         # Mode cards
@@ -124,10 +114,13 @@ class HomeView(QWidget):
         logo_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(logo_label)
 
-        # Version subtitle
-        subtitle = QLabel(f"v{APP_VERSION} - Suite d'outils biometriques")
+        # Version and GitHub link
+        subtitle = QLabel(
+            f'v{APP_VERSION} — <a href="https://github.com/ybdn">github.com/ybdn</a>'
+        )
         subtitle.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
         subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setOpenExternalLinks(True)
         layout.addWidget(subtitle)
 
         container.setLayout(layout)
@@ -221,16 +214,9 @@ class HomeView(QWidget):
         return button
 
     def set_current_file(self, path: Optional[str], mode: str = "viewer"):
-        """Update current file display."""
+        """Update current file state (for internal tracking)."""
         self.current_file = path
         self.current_mode = mode
-        if path:
-            name = Path(path).name
-            mode_labels = {"viewer": "NIST-Viewer", "comparison": "NIST-Compare", "pdf": "NIST-2-PDF"}
-            mode_label = mode_labels.get(mode, mode)
-            self.current_file_label.setText(f"Fichier en cours : {name} - Mode : {mode_label}")
-        else:
-            self.current_file_label.setText("Aucun fichier ouvert")
 
     def set_recent_entries(self, entries):
         """Compatibility stub."""
