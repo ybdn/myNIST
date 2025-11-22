@@ -29,6 +29,76 @@ jobs:
                   pip install -r requirements.txt
                   pip install pyinstaller
 
+            # Build NBIS tools (dwsq for WSQ decoding)
+            - name: Build NBIS (Linux)
+              if: runner.os == 'Linux'
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y build-essential cmake libpng-dev zlib1g-dev
+
+                  # Download NBIS source
+                  curl -L -o nbis.zip "https://github.com/lessandro/nbern/archive/refs/heads/master.zip"
+                  unzip -q nbis.zip
+                  cd nbern-master
+
+                  # Build
+                  mkdir build && cd build
+                  cmake ..
+                  make -j$(nproc)
+
+                  # Copy binaries
+                  mkdir -p $GITHUB_WORKSPACE/nbis/bin
+                  cp bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || true
+                  cp bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || true
+
+                  echo "NBIS built successfully"
+                  ls -la $GITHUB_WORKSPACE/nbis/bin/
+
+            - name: Build NBIS (macOS)
+              if: runner.os == 'macOS'
+              run: |
+                  brew install cmake libpng
+
+                  # Download NBIS source
+                  curl -L -o nbis.zip "https://github.com/lessandro/nbern/archive/refs/heads/master.zip"
+                  unzip -q nbis.zip
+                  cd nbern-master
+
+                  # Build
+                  mkdir build && cd build
+                  cmake ..
+                  make -j$(sysctl -n hw.ncpu)
+
+                  # Copy binaries
+                  mkdir -p $GITHUB_WORKSPACE/nbis/bin
+                  cp bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || true
+                  cp bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || true
+
+                  echo "NBIS built successfully"
+                  ls -la $GITHUB_WORKSPACE/nbis/bin/
+
+            - name: Build NBIS (Windows)
+              if: runner.os == 'Windows'
+              shell: bash
+              run: |
+                  # Download NBIS source
+                  curl -L -o nbis.zip "https://github.com/lessandro/nbern/archive/refs/heads/master.zip"
+                  unzip -q nbis.zip
+                  cd nbern-master
+
+                  # Build with CMake + MSVC
+                  mkdir build && cd build
+                  cmake .. -G "Visual Studio 17 2022" -A x64
+                  cmake --build . --config Release
+
+                  # Copy binaries
+                  mkdir -p $GITHUB_WORKSPACE/nbis/bin
+                  cp bin/Release/dwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || cp bin/dwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || true
+                  cp bin/Release/cwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || cp bin/cwsq.exe $GITHUB_WORKSPACE/nbis/bin/ || true
+
+                  echo "NBIS built successfully"
+                  ls -la $GITHUB_WORKSPACE/nbis/bin/
+
             # Generate proper multi-resolution ICO on Windows
             - name: Generate Windows icon
               if: runner.os == 'Windows'
@@ -52,14 +122,44 @@ jobs:
                           img = img.convert('RGBA')
                       images.append(img)
 
+                  ico_path = f'{icon_dir}/appicon-nist-studio.ico'
+
                   images[0].save(
-                      f'{icon_dir}/appicon-nist-studio.ico',
+                      ico_path,
                       format='ICO',
                       append_images=images[1:],
                       sizes=[(img.width, img.height) for img in images]
                   )
-                  print('Generated multi-resolution ICO')
+                  print('Generated multi-resolution ICO: appicon-nist-studio.ico')
                   "
+
+            # Generate ICNS for macOS dock icon
+            - name: Generate macOS icon
+              if: runner.os == 'macOS'
+              run: |
+                  # Create iconset directory
+                  mkdir -p mynist/resources/icons/AppIcon.iconset
+
+                  # Copy/resize icons to iconset with required naming
+                  icon_dir="mynist/resources/icons"
+                  iconset="$icon_dir/AppIcon.iconset"
+
+                  # Use sips to create all required sizes
+                  sips -z 16 16     "$icon_dir/appicon-nist-studio-16.png" --out "$iconset/icon_16x16.png"
+                  sips -z 32 32     "$icon_dir/appicon-nist-studio-32.png" --out "$iconset/icon_16x16@2x.png"
+                  sips -z 32 32     "$icon_dir/appicon-nist-studio-32.png" --out "$iconset/icon_32x32.png"
+                  sips -z 64 64     "$icon_dir/appicon-nist-studio-64.png" --out "$iconset/icon_32x32@2x.png"
+                  sips -z 128 128   "$icon_dir/appicon-nist-studio-128.png" --out "$iconset/icon_128x128.png"
+                  sips -z 256 256   "$icon_dir/appicon-nist-studio-256.png" --out "$iconset/icon_128x128@2x.png"
+                  sips -z 256 256   "$icon_dir/appicon-nist-studio-256.png" --out "$iconset/icon_256x256.png"
+                  sips -z 512 512   "$icon_dir/appicon-nist-studio-512.png" --out "$iconset/icon_256x256@2x.png"
+                  sips -z 512 512   "$icon_dir/appicon-nist-studio-512.png" --out "$iconset/icon_512x512.png"
+                  sips -z 1024 1024 "$icon_dir/appicon-nist-studio-512.png" --out "$iconset/icon_512x512@2x.png"
+
+                  # Convert iconset to icns
+                  iconutil -c icns "$iconset" -o "$icon_dir/appicon-nist-studio.icns"
+
+                  echo "Generated macOS icon: appicon-nist-studio.icns"
 
             - name: Build with PyInstaller
               run: |

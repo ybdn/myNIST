@@ -10,10 +10,10 @@ datas_list = [
     ('mynist/resources', 'mynist/resources'),
 ]
 
-# Inclure les binaires NBIS s'ils sont présents dans le repo (nbis/ ou nbis/bin).
-nbis_dir = Path('nbis')
-if nbis_dir.exists():
-    datas_list.append(('nbis', 'nbis'))
+# Include NBIS binaries if present (built by CI or manually)
+nbis_bin = Path('nbis/bin')
+if nbis_bin.exists():
+    datas_list.append(('nbis/bin', 'nbis/bin'))
 
 a = Analysis(
     ['mynist/__main__.py'],
@@ -21,13 +21,24 @@ a = Analysis(
     binaries=[],
     datas=datas_list,
     hiddenimports=[
+        # NIST file parsing
         'nistitl',
+        # PyQt5 GUI
         'PyQt5.sip',
         'PyQt5.QtCore',
         'PyQt5.QtGui',
         'PyQt5.QtWidgets',
+        'PyQt5.QtSvg',  # Used for SVG icons
+        # Pillow image processing
         'PIL',
         'PIL.Image',
+        'PIL.ImageOps',
+        'PIL.ImageDraw',
+        'PIL.ImageFont',
+        'PIL.ImageEnhance',
+        # JPEG2000 decoding
+        'imagecodecs',
+        # WSQ decoding (fingerprint images)
         'wsq',
         'wsq.WsqImagePlugin',
     ],
@@ -36,7 +47,6 @@ a = Analysis(
     runtime_hooks=[],
     excludes=[
         'matplotlib',
-        'numpy',
         'pandas',
         'scipy',
         'tkinter',
@@ -53,7 +63,9 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 if sys.platform == 'win32':
     icon_path = 'mynist/resources/icons/appicon-nist-studio.ico'
 elif sys.platform == 'darwin':
-    icon_path = 'mynist/resources/icons/appicon-nist-studio-256.png'
+    # macOS requires .icns for proper dock icon display
+    icns_path = Path('mynist/resources/icons/appicon-nist-studio.icns')
+    icon_path = str(icns_path) if icns_path.exists() else None
 else:
     icon_path = 'mynist/resources/icons/appicon-nist-studio-256.png'
 
