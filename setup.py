@@ -9,7 +9,7 @@ setup(
     name="mynist",
     version="0.1.0",
     author="Yoann BAUDRIN",
-    description="A NIST file viewer and editor for Ubuntu",
+    description="NIST Studio - Viewer and editor for ANSI/NIST-ITL biometric files",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=find_packages(),
