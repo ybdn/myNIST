@@ -4,8 +4,12 @@ from pathlib import Path
 from PyQt5.QtWidgets import (
     QAction,
     QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QSplitter,
     QStackedWidget,
     QStatusBar,
@@ -14,7 +18,8 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 from PyQt5.QtCore import Qt, QSize, QPoint
-from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPen
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor, QPen, QPalette
+from PyQt5.QtSvg import QSvgRenderer
 from mynist.views.file_panel import FilePanel
 from mynist.views.data_panel import DataPanel
 from mynist.views.image_panel import ImagePanel
@@ -110,8 +115,84 @@ class MainWindow(QMainWindow):
         self.update_actions_state(False)
 
     def _build_viewer_page(self) -> QWidget:
-        """Create viewer page containing the 3-panel splitter."""
+        """Create viewer page containing header bar and 3-panel splitter."""
         container = QWidget()
+        container.setObjectName("ViewerRoot")
+
+        # Apply theme-aware styling
+        palette = self.palette()
+        window = palette.color(QPalette.Window)
+        base = palette.color(QPalette.Base)
+        text = palette.color(QPalette.Text)
+        border = palette.color(QPalette.Mid)
+
+        is_dark = window.value() < 96 or base.value() < 96
+
+        def tweak(color: QColor, factor: int) -> QColor:
+            return color.lighter(factor) if is_dark else color.darker(factor)
+
+        header_bg = tweak(base, 105)
+
+        container.setStyleSheet(
+            f"""
+            #ViewerRoot {{
+                background-color: {window.name()};
+            }}
+            #viewerHeader {{
+                background: {header_bg.name()};
+                border-bottom: 1px solid {border.name()};
+                padding: 8px 16px;
+            }}
+            #viewerHeader QLabel {{
+                color: {text.name()};
+            }}
+            #viewerTitleLabel {{
+                font-size: 16px;
+                font-weight: bold;
+            }}
+            #viewerFileLabel {{
+                font-size: 12px;
+                color: {border.name()};
+            }}
+            """
+        )
+
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Header bar
+        header = QFrame()
+        header.setObjectName("viewerHeader")
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(16, 8, 16, 8)
+
+        # Hub button
+        hub_btn = QPushButton("Retour au Hub")
+        hub_btn.clicked.connect(self.switch_to_home)
+        hub_icon = self._load_hub_icon("home", 20)
+        if not hub_icon.isNull():
+            hub_btn.setIcon(hub_icon)
+        header_layout.addWidget(hub_btn)
+
+        header_layout.addStretch()
+
+        # Title
+        title = QLabel("NIST-Viewer")
+        title.setObjectName("viewerTitleLabel")
+        header_layout.addWidget(title)
+
+        header_layout.addStretch()
+
+        # File info label
+        self.viewer_file_label = QLabel("Aucun fichier")
+        self.viewer_file_label.setObjectName("viewerFileLabel")
+        header_layout.addWidget(self.viewer_file_label)
+
+        header.setLayout(header_layout)
+        layout.addWidget(header)
+
+        # 3-panel splitter
         splitter = QSplitter(Qt.Horizontal)
 
         self.file_panel = FilePanel(self)
@@ -123,9 +204,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.image_panel)
         splitter.setSizes(PANEL_SIZES)
 
-        layout = QVBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(splitter)
+        layout.addWidget(splitter, 1)
         container.setLayout(layout)
 
         # Connect signals
@@ -133,6 +212,22 @@ class MainWindow(QMainWindow):
         self.data_panel.field_changed.connect(self.on_field_changed)
 
         return container
+
+    def _load_hub_icon(self, name: str, size: int = 24) -> QIcon:
+        """Load SVG icon from hub folder."""
+        path = Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
+        if not path.exists():
+            return QIcon()
+
+        renderer = QSvgRenderer(str(path))
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+
+        return QIcon(pixmap)
 
     def create_menus(self):
         """Create application menus."""
@@ -372,12 +467,22 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(self.base_title)
         self.update_actions_state(False)
         self.home_view.set_current_file(None)
+        self._update_viewer_file_label(None)
         self.switch_to_home()
         self.is_modified = False
         self.last_change = None
 
         if show_message:
             self.status_bar.showMessage("Closed current NIST file", 4000)
+
+    def _update_viewer_file_label(self, path: str = None):
+        """Update the file label in viewer header."""
+        if hasattr(self, 'viewer_file_label'):
+            if path:
+                name = Path(path).name
+                self.viewer_file_label.setText(f"Fichier : {name}")
+            else:
+                self.viewer_file_label.setText("Aucun fichier")
 
     def dragEnterEvent(self, event):
         """Accept drag if it contains a supported local file."""
@@ -470,6 +575,7 @@ class MainWindow(QMainWindow):
             self.refresh_recent_entries()
             self.home_view.set_current_file(file_path, "viewer")
             self.pdf_view.set_current_file(file_path)
+            self._update_viewer_file_label(file_path)
             self.is_modified = False
             self.last_change = None
             self._refresh_title()
