@@ -61,9 +61,6 @@ def _decode_wsq_python(data: bytes) -> Tuple[Optional[Image.Image], str]:
 def _find_dwsq() -> Optional[str]:
     """Trouve l'exécutable dwsq (bundled ou système)."""
     import sys
-    import logging
-
-    logger = logging.getLogger(__name__)
 
     if sys.platform == 'win32':
         dwsq_name = 'dwsq.exe'
@@ -78,20 +75,21 @@ def _find_dwsq() -> Optional[str]:
         bundle_dir = Path(sys._MEIPASS)  # type: ignore
         exe_dir = Path(sys.executable).parent
 
-        logger.debug(f"PyInstaller frozen app detected")
-        logger.debug(f"  _MEIPASS: {bundle_dir}")
-        logger.debug(f"  executable: {sys.executable}")
+        print(f"[DWSQ DEBUG] frozen=True", file=sys.stderr)
+        print(f"[DWSQ DEBUG] _MEIPASS={bundle_dir}", file=sys.stderr)
+        print(f"[DWSQ DEBUG] executable={sys.executable}", file=sys.stderr)
+        print(f"[DWSQ DEBUG] exe_dir={exe_dir}", file=sys.stderr)
 
         # Chemin standard (onefolder COLLECT)
         possible_paths.append(bundle_dir / 'nbis' / 'bin' / dwsq_name)
 
         # Pour macOS .app bundle, la structure est:
         # NIST-Studio.app/Contents/MacOS/nist-studio (executable)
-        # NIST-Studio.app/Contents/Resources/nbis/bin/dwsq (data)
+        # NIST-Studio.app/Contents/Frameworks/nbis/bin/dwsq (binaires)
         if sys.platform == 'darwin':
             # Méthode 1: Partir de l'executable (plus fiable)
-            # exe_dir = .../NIST-Studio.app/Contents/MacOS
             contents_dir = exe_dir.parent  # .../NIST-Studio.app/Contents
+            print(f"[DWSQ DEBUG] contents_dir={contents_dir}", file=sys.stderr)
             possible_paths.extend([
                 contents_dir / 'Resources' / 'nbis' / 'bin' / dwsq_name,
                 contents_dir / 'Frameworks' / 'nbis' / 'bin' / dwsq_name,
@@ -118,18 +116,19 @@ def _find_dwsq() -> Optional[str]:
         if path_str in seen:
             continue
         seen.add(path_str)
-        logger.debug(f"  Checking: {path} -> exists={path.exists()}")
-        if path.exists():
-            logger.info(f"Found dwsq at: {path}")
+        exists = path.exists()
+        print(f"[DWSQ DEBUG] Checking: {path} -> exists={exists}", file=sys.stderr)
+        if exists:
+            print(f"[DWSQ DEBUG] FOUND: {path}", file=sys.stderr)
             return str(path)
 
     # 3. Chercher dans le PATH système
     system_dwsq = shutil.which("dwsq")
     if system_dwsq:
-        logger.info(f"Found dwsq in PATH: {system_dwsq}")
+        print(f"[DWSQ DEBUG] Found in PATH: {system_dwsq}", file=sys.stderr)
         return system_dwsq
 
-    logger.warning("dwsq not found in any location")
+    print("[DWSQ DEBUG] NOT FOUND anywhere!", file=sys.stderr)
     return None
 
 
