@@ -14,10 +14,7 @@ from PyQt5.QtWidgets import (
     QGroupBox,
 )
 
-from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius,
-    Theme, load_svg_icon
-)
+from mynist.utils.design_tokens import Typography, Spacing, Radius, load_svg_icon
 
 
 class PdfExportView(QWidget):
@@ -30,126 +27,16 @@ class PdfExportView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_file: Optional[str] = None
-        self.setObjectName("PdfExportRoot")
-        self._setup_theme()
         self._build_ui()
 
     def _get_icon_path(self, name: str) -> Path:
         """Return path to hub icon."""
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
-    def _setup_theme(self):
-        """Setup theme and apply stylesheet."""
-        self._theme = Theme()
-        self._apply_stylesheet()
-
-    def _load_icon(self, name: str, size: int = 24, on_accent: bool = True):
-        """Load colored icon."""
+    def _load_icon(self, name: str, size: int = 24):
+        """Load colored icon with OS color."""
         path = self._get_icon_path(name)
-        color = Colors.ICON_ON_ACCENT if on_accent else self._theme.icon_color
-        return load_svg_icon(path, color, size)
-
-    def _apply_stylesheet(self):
-        """Apply theme stylesheet."""
-        t = self._theme
-
-        self.setStyleSheet(f"""
-            #PdfExportRoot {{
-                background-color: {t.bg};
-            }}
-
-            #PdfExportRoot QLabel {{
-                color: {t.text};
-            }}
-
-            #titleLabel {{
-                font-size: {Typography.SIZE_XL}px;
-                font-weight: {Typography.WEIGHT_SEMIBOLD};
-                color: {t.text};
-            }}
-
-            #subtitleLabel {{
-                font-size: {Typography.SIZE_SM}px;
-                color: {t.text_secondary};
-            }}
-
-            QGroupBox {{
-                font-weight: {Typography.WEIGHT_SEMIBOLD};
-                font-size: {Typography.SIZE_MD}px;
-                border: 1px solid {t.border};
-                border-radius: {Radius.LG}px;
-                margin-top: 14px;
-                padding: {Spacing.LG}px;
-                background: {t.surface};
-                color: {t.text};
-            }}
-
-            QGroupBox::title {{
-                subcontrol-origin: margin;
-                subcontrol-position: top left;
-                padding: 2px 10px;
-                background: {t.bg};
-                border-radius: {Radius.SM}px;
-                color: {t.text};
-            }}
-
-            #hubButton {{
-                background: {t.accent};
-                color: white;
-                border: none;
-                border-radius: {Radius.MD}px;
-                padding: {Spacing.SM}px {Spacing.LG}px;
-                font-weight: {Typography.WEIGHT_MEDIUM};
-            }}
-
-            #hubButton:hover {{
-                background: {t.accent_hover};
-            }}
-
-            #exportBtn {{
-                background: {t.accent};
-                color: white;
-                font-weight: {Typography.WEIGHT_SEMIBOLD};
-                font-size: {Typography.SIZE_MD}px;
-                padding: {Spacing.MD}px {Spacing.XXXL}px;
-                border-radius: {Radius.LG}px;
-                border: none;
-            }}
-
-            #exportBtn:hover {{
-                background: {t.accent_hover};
-            }}
-
-            #exportBtn:disabled {{
-                background: {Colors.DISABLED};
-                color: {t.text_secondary};
-            }}
-
-            QLineEdit {{
-                padding: {Spacing.SM}px {Spacing.MD}px;
-                border: 1px solid {t.border};
-                border-radius: {Radius.MD}px;
-                background: {t.surface};
-                color: {t.text};
-                font-size: {Typography.SIZE_MD}px;
-            }}
-
-            QLineEdit:focus {{
-                border-color: {t.accent};
-            }}
-
-            QPushButton {{
-                padding: {Spacing.SM}px {Spacing.MD}px;
-                border: 1px solid {t.border};
-                border-radius: {Radius.MD}px;
-                background: {t.surface};
-                color: {t.text};
-            }}
-
-            QPushButton:hover {{
-                background: {t.border};
-            }}
-        """)
+        return load_svg_icon(path, size=size)
 
     def _build_ui(self):
         layout = QVBoxLayout()
@@ -180,11 +67,18 @@ class PdfExportView(QWidget):
         export_row.addStretch()
 
         self.export_btn = QPushButton("Exporter le PDF")
-        self.export_btn.setObjectName("exportBtn")
         self.export_btn.setCursor(Qt.PointingHandCursor)
         self.export_btn.setMinimumWidth(200)
+        self.export_btn.setStyleSheet(f"""
+            QPushButton {{
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                font-size: {Typography.SIZE_MD}px;
+                padding: {Spacing.MD}px {Spacing.XXXL}px;
+                border-radius: {Radius.LG}px;
+            }}
+        """)
         self.export_btn.clicked.connect(self._on_export_clicked)
-        export_icon = self._load_icon("pdf", 20, on_accent=True)
+        export_icon = self._load_icon("pdf", 20)
         if not export_icon.isNull():
             self.export_btn.setIcon(export_icon)
         export_row.addWidget(self.export_btn)
@@ -216,10 +110,16 @@ class PdfExportView(QWidget):
 
         # Back button
         back_btn = QPushButton("Retour au Hub")
-        back_btn.setObjectName("hubButton")
         back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.setStyleSheet(f"""
+            QPushButton {{
+                border-radius: {Radius.MD}px;
+                padding: {Spacing.SM}px {Spacing.LG}px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+            }}
+        """)
         back_btn.clicked.connect(self.back_requested.emit)
-        back_icon = self._load_icon("home", 20, on_accent=True)
+        back_icon = self._load_icon("home", 20)
         if not back_icon.isNull():
             back_btn.setIcon(back_icon)
         header.addWidget(back_btn)
@@ -228,7 +128,10 @@ class PdfExportView(QWidget):
 
         # Title
         title = QLabel("NIST-2-PDF")
-        title.setObjectName("titleLabel")
+        title.setStyleSheet(f"""
+            font-size: {Typography.SIZE_XL}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+        """)
         header.addWidget(title)
 
         header.addStretch()
@@ -243,6 +146,15 @@ class PdfExportView(QWidget):
     def _build_source_group(self) -> QGroupBox:
         """Build source file display group."""
         group = QGroupBox("Fichier source")
+        group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                font-size: {Typography.SIZE_MD}px;
+                border-radius: {Radius.LG}px;
+                margin-top: 14px;
+                padding: {Spacing.LG}px;
+            }}
+        """)
         layout = QVBoxLayout()
         layout.setContentsMargins(Spacing.LG, Spacing.XL, Spacing.LG, Spacing.LG)
 
@@ -256,15 +168,37 @@ class PdfExportView(QWidget):
     def _build_destination_group(self) -> QGroupBox:
         """Build destination path input group."""
         group = QGroupBox("Destination")
+        group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                font-size: {Typography.SIZE_MD}px;
+                border-radius: {Radius.LG}px;
+                margin-top: 14px;
+                padding: {Spacing.LG}px;
+            }}
+        """)
         layout = QHBoxLayout()
         layout.setContentsMargins(Spacing.LG, Spacing.XL, Spacing.LG, Spacing.LG)
         layout.setSpacing(Spacing.MD)
 
         self.output_input = QLineEdit()
         self.output_input.setPlaceholderText("Chemin du fichier PDF de sortie...")
+        self.output_input.setStyleSheet(f"""
+            QLineEdit {{
+                padding: {Spacing.SM}px {Spacing.MD}px;
+                border-radius: {Radius.MD}px;
+                font-size: {Typography.SIZE_MD}px;
+            }}
+        """)
         layout.addWidget(self.output_input, 1)
 
         browse_btn = QPushButton("Parcourir...")
+        browse_btn.setStyleSheet(f"""
+            QPushButton {{
+                padding: {Spacing.SM}px {Spacing.MD}px;
+                border-radius: {Radius.MD}px;
+            }}
+        """)
         browse_btn.clicked.connect(self.browse_requested.emit)
         layout.addWidget(browse_btn)
 
@@ -274,6 +208,15 @@ class PdfExportView(QWidget):
     def _build_info_group(self) -> QGroupBox:
         """Build information panel group."""
         group = QGroupBox("Organisation du releve")
+        group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                font-size: {Typography.SIZE_MD}px;
+                border-radius: {Radius.LG}px;
+                margin-top: 14px;
+                padding: {Spacing.LG}px;
+            }}
+        """)
         layout = QVBoxLayout()
         layout.setContentsMargins(Spacing.LG, Spacing.XL, Spacing.LG, Spacing.LG)
         layout.setSpacing(Spacing.SM)
@@ -304,7 +247,7 @@ class PdfExportView(QWidget):
         formats_label = QLabel(
             "<i>Formats supportes : WSQ, JPEG, PNG, JPEG2000</i>"
         )
-        formats_label.setObjectName("subtitleLabel")
+        formats_label.setStyleSheet(f"font-size: {Typography.SIZE_SM}px;")
         layout.addWidget(formats_label)
 
         group.setLayout(layout)

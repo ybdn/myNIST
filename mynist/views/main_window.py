@@ -40,10 +40,7 @@ from mynist.utils.constants import (
 )
 from mynist.utils.logger import get_logger
 from mynist.utils.recent_files import RecentFiles
-from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius,
-    Theme, load_svg_icon
-)
+from mynist.utils.design_tokens import Typography, Spacing, Radius, load_svg_icon
 
 logger = get_logger(__name__)
 
@@ -121,42 +118,20 @@ class MainWindow(QMainWindow):
     def _build_viewer_page(self) -> QWidget:
         """Create viewer page containing header bar and 3-panel splitter."""
         container = QWidget()
-        container.setObjectName("ViewerRoot")
 
-        # Apply NIST Studio Design System
-        t = Theme()
-        self._viewer_theme = t
-
+        # Minimal styling - let OS handle colors
         container.setStyleSheet(f"""
-            #ViewerRoot {{
-                background-color: {t.bg};
-            }}
-            #viewerHeader {{
-                background: {t.surface};
-                border-bottom: 1px solid {t.border};
-            }}
-            #viewerHeader QLabel {{
-                color: {t.text};
-            }}
             #viewerTitleLabel {{
                 font-size: {Typography.SIZE_LG}px;
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
-                color: {t.text};
             }}
             #viewerFileLabel {{
                 font-size: {Typography.SIZE_SM}px;
-                color: {t.text_secondary};
             }}
             #hubButton {{
-                background: {t.accent};
-                color: white;
-                border: none;
                 border-radius: {Radius.MD}px;
                 padding: {Spacing.SM}px {Spacing.LG}px;
                 font-weight: {Typography.WEIGHT_MEDIUM};
-            }}
-            #hubButton:hover {{
-                background: {t.accent_hover};
             }}
         """)
 
@@ -218,24 +193,15 @@ class MainWindow(QMainWindow):
 
         return container
 
-    def _load_hub_icon(self, name: str, size: int = 24, on_accent: bool = True) -> QIcon:
-        """Load SVG icon from hub folder with appropriate color.
+    def _load_hub_icon(self, name: str, size: int = 24) -> QIcon:
+        """Load SVG icon from hub folder with OS-appropriate color.
 
         Args:
             name: Icon name (without .svg extension)
             size: Icon size in pixels
-            on_accent: True if icon is on accent-colored button (white icon)
         """
         path = Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
-        theme = getattr(self, '_viewer_theme', Theme())
-
-        # Icons on accent buttons are always white
-        if on_accent:
-            color = Colors.ICON_ON_ACCENT
-        else:
-            color = theme.icon_color
-
-        return load_svg_icon(path, color, size)
+        return load_svg_icon(path, size=size)
 
     def create_menus(self):
         """Create application menus."""

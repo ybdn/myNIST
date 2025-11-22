@@ -15,11 +15,7 @@ from PyQt5.QtWidgets import (
 )
 
 from mynist.utils.constants import APP_NAME, APP_VERSION
-from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius,
-    Theme, is_dark_theme, load_svg_icon,
-    get_card_stylesheet
-)
+from mynist.utils.design_tokens import Typography, Spacing, Radius, load_svg_icon
 
 
 class HomeView(QWidget):
@@ -36,11 +32,6 @@ class HomeView(QWidget):
         self.current_file: Optional[str] = None
         self.current_mode: str = "viewer"
         self._icon_cache: Dict[str, QIcon] = {}
-
-        # Setup theme
-        self._theme = Theme()
-        self.setObjectName("HomeRoot")
-        self._apply_styles()
         self._build_ui()
 
     def _get_icon_path(self, name: str) -> Path:
@@ -48,54 +39,15 @@ class HomeView(QWidget):
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
     def _load_icon(self, name: str, size: int = 48) -> QIcon:
-        """Load SVG icon with theme-appropriate color."""
-        cache_key = f"{name}_{size}_{self._theme.is_dark}"
+        """Load SVG icon with OS-appropriate color."""
+        cache_key = f"{name}_{size}"
         if cache_key in self._icon_cache:
             return self._icon_cache[cache_key]
 
         path = self._get_icon_path(name)
-        icon = load_svg_icon(path, self._theme.icon_color, size)
+        icon = load_svg_icon(path, size=size)
         self._icon_cache[cache_key] = icon
         return icon
-
-    def _apply_styles(self):
-        """Apply stylesheet."""
-        t = self._theme
-
-        stylesheet = f"""
-            QWidget#HomeRoot {{
-                background-color: {t.bg};
-            }}
-
-            QWidget#HomeRoot QLabel {{
-                color: {t.text};
-                background: transparent;
-            }}
-
-            QLabel#titleLabel {{
-                font-size: {Typography.SIZE_3XL}px;
-                font-weight: {Typography.WEIGHT_BOLD};
-                color: {t.text};
-            }}
-
-            QLabel#subtitleLabel {{
-                font-size: {Typography.SIZE_MD}px;
-                color: {t.text_secondary};
-            }}
-
-            QLabel#currentFileLabel {{
-                font-size: {Typography.SIZE_SM}px;
-                padding: {Spacing.SM}px {Spacing.LG}px;
-                background-color: {t.surface};
-                border: 1px solid {t.border};
-                border-radius: {Radius.MD}px;
-                color: {t.text};
-            }}
-
-            {get_card_stylesheet(t)}
-        """
-
-        self.setStyleSheet(stylesheet)
 
     def _build_ui(self):
         layout = QVBoxLayout()
@@ -111,8 +63,12 @@ class HomeView(QWidget):
 
         # Current file status
         self.current_file_label = QLabel("Aucun fichier ouvert")
-        self.current_file_label.setObjectName("currentFileLabel")
         self.current_file_label.setAlignment(Qt.AlignCenter)
+        self.current_file_label.setStyleSheet(f"""
+            font-size: {Typography.SIZE_SM}px;
+            padding: {Spacing.SM}px {Spacing.LG}px;
+            border-radius: {Radius.MD}px;
+        """)
         layout.addWidget(self.current_file_label)
 
         layout.addSpacing(Spacing.MD)
@@ -127,19 +83,21 @@ class HomeView(QWidget):
     def _build_header(self) -> QWidget:
         """Build header with app title."""
         container = QWidget()
-        container.setObjectName("headerContainer")
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(Spacing.SM)
         layout.setAlignment(Qt.AlignCenter)
 
         title = QLabel(APP_NAME)
-        title.setObjectName("titleLabel")
+        title.setStyleSheet(f"""
+            font-size: {Typography.SIZE_3XL}px;
+            font-weight: {Typography.WEIGHT_BOLD};
+        """)
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
 
         subtitle = QLabel(f"v{APP_VERSION} - Suite d'outils biometriques")
-        subtitle.setObjectName("subtitleLabel")
+        subtitle.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
         subtitle.setAlignment(Qt.AlignCenter)
         layout.addWidget(subtitle)
 
@@ -179,12 +137,21 @@ class HomeView(QWidget):
     def _make_card_button(self, title: str, subtitle: str, mode: str, icon_name: str, enabled: bool) -> QPushButton:
         """Create a card button."""
         button = QPushButton()
-        button.setObjectName("modeCard")
         button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         button.setFixedHeight(140)
         button.setMinimumWidth(280)
         button.setEnabled(enabled)
         button.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
+
+        # Style with OS colors + layout tokens
+        button.setStyleSheet(f"""
+            QPushButton {{
+                border-radius: {Radius.XL}px;
+                padding: {Spacing.XL}px;
+                font-size: {Typography.SIZE_MD}px;
+                text-align: center;
+            }}
+        """)
 
         # Load icon
         icon = self._load_icon(icon_name, 48)

@@ -12,10 +12,7 @@ from PyQt5.QtWidgets import (
     QFrame,
 )
 
-from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius,
-    Theme, load_svg_icon
-)
+from mynist.utils.design_tokens import Typography, Spacing, Radius, load_svg_icon
 
 
 class Image2NISTView(QWidget):
@@ -25,73 +22,16 @@ class Image2NISTView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setObjectName("Image2NISTRoot")
-        self._setup_theme()
         self._build_ui()
 
     def _get_icon_path(self, name: str) -> Path:
         """Return path to hub icon."""
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
-    def _setup_theme(self):
-        """Setup theme and apply stylesheet."""
-        self._theme = Theme()
-        self._apply_stylesheet()
-
-    def _load_icon(self, name: str, size: int = 64, on_accent: bool = False):
-        """Load colored icon."""
+    def _load_icon(self, name: str, size: int = 64):
+        """Load colored icon with OS color."""
         path = self._get_icon_path(name)
-        color = Colors.ICON_ON_ACCENT if on_accent else self._theme.icon_color
-        return load_svg_icon(path, color, size)
-
-    def _apply_stylesheet(self):
-        """Apply theme stylesheet."""
-        t = self._theme
-
-        self.setStyleSheet(f"""
-            #Image2NISTRoot {{
-                background-color: {t.bg};
-            }}
-
-            #Image2NISTRoot QLabel {{
-                color: {t.text};
-            }}
-
-            #titleLabel {{
-                font-size: {Typography.SIZE_XL}px;
-                font-weight: {Typography.WEIGHT_SEMIBOLD};
-                color: {t.text};
-            }}
-
-            #subtitleLabel {{
-                font-size: {Typography.SIZE_MD}px;
-                color: {t.text_secondary};
-            }}
-
-            #hubButton {{
-                background: {t.accent};
-                color: white;
-                border: none;
-                border-radius: {Radius.MD}px;
-                padding: {Spacing.SM}px {Spacing.LG}px;
-                font-weight: {Typography.WEIGHT_MEDIUM};
-            }}
-
-            #hubButton:hover {{
-                background: {t.accent_hover};
-            }}
-
-            QFrame#placeholderFrame {{
-                background: {t.surface};
-                border: 2px dashed {t.border};
-                border-radius: {Radius.XL}px;
-            }}
-
-            #comingSoonLabel {{
-                font-style: italic;
-                color: {t.text_secondary};
-            }}
-        """)
+        return load_svg_icon(path, size=size)
 
     def _build_ui(self):
         layout = QVBoxLayout()
@@ -103,10 +43,16 @@ class Image2NISTView(QWidget):
         header.setContentsMargins(0, 0, 0, 0)
 
         back_btn = QPushButton("Retour au Hub")
-        back_btn.setObjectName("hubButton")
         back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.setStyleSheet(f"""
+            QPushButton {{
+                border-radius: {Radius.MD}px;
+                padding: {Spacing.SM}px {Spacing.LG}px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+            }}
+        """)
         back_btn.clicked.connect(self.back_requested.emit)
-        back_icon = self._load_icon("home", 20, on_accent=True)
+        back_icon = self._load_icon("home", 20)
         if not back_icon.isNull():
             back_btn.setIcon(back_icon)
         header.addWidget(back_btn)
@@ -114,7 +60,10 @@ class Image2NISTView(QWidget):
         header.addStretch()
 
         page_title = QLabel("Image-2-NIST")
-        page_title.setObjectName("titleLabel")
+        page_title.setStyleSheet(f"""
+            font-size: {Typography.SIZE_XL}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+        """)
         header.addWidget(page_title)
 
         header.addStretch()
@@ -129,7 +78,12 @@ class Image2NISTView(QWidget):
         layout.addStretch()
 
         frame = QFrame()
-        frame.setObjectName("placeholderFrame")
+        frame.setStyleSheet(f"""
+            QFrame {{
+                border: 2px dashed palette(mid);
+                border-radius: {Radius.XL}px;
+            }}
+        """)
         frame.setFixedSize(500, 320)
 
         frame_layout = QVBoxLayout()
@@ -139,7 +93,7 @@ class Image2NISTView(QWidget):
 
         # Icon
         icon_label = QLabel()
-        icon = self._load_icon("image2nist", 64, on_accent=False)
+        icon = self._load_icon("image2nist", 64)
         if not icon.isNull():
             icon_label.setPixmap(icon.pixmap(64, 64))
         icon_label.setAlignment(Qt.AlignCenter)
@@ -147,7 +101,10 @@ class Image2NISTView(QWidget):
 
         # Title
         title = QLabel("En developpement")
-        title.setObjectName("titleLabel")
+        title.setStyleSheet(f"""
+            font-size: {Typography.SIZE_XL}px;
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+        """)
         title.setAlignment(Qt.AlignCenter)
         frame_layout.addWidget(title)
 
@@ -157,13 +114,16 @@ class Image2NISTView(QWidget):
             "des images (JPG, PNG, WSQ, JP2) en fichiers NIST\n"
             "avec metadonnees personnalisables."
         )
-        desc.setObjectName("subtitleLabel")
+        desc.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
         desc.setAlignment(Qt.AlignCenter)
         frame_layout.addWidget(desc)
 
         # Coming soon label
         soon = QLabel("Disponible prochainement")
-        soon.setObjectName("comingSoonLabel")
+        soon.setStyleSheet(f"""
+            font-style: italic;
+            font-size: {Typography.SIZE_SM}px;
+        """)
         soon.setAlignment(Qt.AlignCenter)
         frame_layout.addWidget(soon)
 
