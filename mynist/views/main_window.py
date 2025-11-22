@@ -42,7 +42,7 @@ from mynist.utils.logger import get_logger
 from mynist.utils.recent_files import RecentFiles
 from mynist.utils.design_tokens import (
     Colors, Typography, Spacing, Radius,
-    Theme, detect_dark_mode, load_colored_icon
+    Theme, load_svg_icon
 )
 
 logger = get_logger(__name__)
@@ -124,9 +124,8 @@ class MainWindow(QMainWindow):
         container.setObjectName("ViewerRoot")
 
         # Apply NIST Studio Design System
-        is_dark = detect_dark_mode(self)
-        self._viewer_is_dark = is_dark
-        t = Theme(is_dark)
+        t = Theme()
+        self._viewer_theme = t
 
         container.setStyleSheet(f"""
             #ViewerRoot {{
@@ -228,15 +227,15 @@ class MainWindow(QMainWindow):
             on_accent: True if icon is on accent-colored button (white icon)
         """
         path = Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
-        is_dark = getattr(self, '_viewer_is_dark', detect_dark_mode(self))
+        theme = getattr(self, '_viewer_theme', Theme())
 
         # Icons on accent buttons are always white
         if on_accent:
             color = Colors.ICON_ON_ACCENT
         else:
-            color = Colors.DARK_ICON if is_dark else Colors.LIGHT_ICON
+            color = theme.icon_color
 
-        return load_colored_icon(path, color, size)
+        return load_svg_icon(path, color, size)
 
     def create_menus(self):
         """Create application menus."""

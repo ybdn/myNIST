@@ -14,7 +14,7 @@ from PyQt5.QtWidgets import (
 
 from mynist.utils.design_tokens import (
     Colors, Typography, Spacing, Radius,
-    Theme, detect_dark_mode, load_colored_icon
+    Theme, load_svg_icon
 )
 
 
@@ -35,15 +35,14 @@ class Image2NISTView(QWidget):
 
     def _setup_theme(self):
         """Setup theme and apply stylesheet."""
-        self._is_dark = detect_dark_mode(self)
-        self._theme = Theme(self._is_dark)
+        self._theme = Theme()
         self._apply_stylesheet()
 
     def _load_icon(self, name: str, size: int = 64, on_accent: bool = False):
         """Load colored icon."""
         path = self._get_icon_path(name)
-        color = Colors.ICON_ON_ACCENT if on_accent else self._theme.icon
-        return load_colored_icon(path, color, size)
+        color = Colors.ICON_ON_ACCENT if on_accent else self._theme.icon_color
+        return load_svg_icon(path, color, size)
 
     def _apply_stylesheet(self):
         """Apply theme stylesheet."""
