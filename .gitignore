@@ -51,6 +51,7 @@ htmlcov/
 *.nst
 test_files/
 nist-files/
+*.pdf
 
 # Agents
 .claude/

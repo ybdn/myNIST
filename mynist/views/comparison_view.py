@@ -27,18 +27,25 @@ from PyQt5.QtWidgets import (
     QGraphicsLineItem,
     QGraphicsSimpleTextItem,
     QToolBar,
+    QToolButton,
+    QMenu,
+    QCheckBox,
     QActionGroup,
     QAction,
     QMessageBox,
     QInputDialog,
     QTabWidget,
     QSplitter,
+    QRadioButton,
+    QButtonGroup,
+    QSizePolicy,
 )
 from PIL import Image, ImageEnhance, ImageOps
 
 from mynist.models.nist_file import NISTFile
 from mynist.utils.image_tools import locate_image_payload, detect_image_format, exif_transpose
 from mynist.utils.image_codecs import decode_wsq, decode_jpeg2000
+from mynist.utils.biometric_labels import get_short_label_fr
 
 
 # Constantes pour les annotations typées
@@ -109,12 +116,13 @@ class AnnotationPoint(QGraphicsEllipseItem):
         return (dx * dx + dy * dy) <= (ANNOTATION_RADIUS + tolerance) ** 2
 
     def _update_text_position(self):
-        rect = self.rect()
         text_rect = self.text_item.boundingRect()
-        self.text_item.setPos(
-            rect.x() + (rect.width() - text_rect.width()) / 2,
-            rect.y() + (rect.height() - text_rect.height()) / 2,
-        )
+        offset_x = ANNOTATION_RADIUS + 4
+        offset_y = -(ANNOTATION_RADIUS + text_rect.height() + 2)
+        self.text_item.setPos(self._center_x + offset_x, self._center_y + offset_y)
+
+    def set_label_visible(self, visible: bool):
+        self.text_item.setVisible(visible)
 
 
 class CalibrationPoint(QGraphicsEllipseItem):
@@ -187,6 +195,7 @@ class AnnotatableView(QGraphicsView):
         self._measurement_start: Optional[Tuple[float, float]] = None
         self._annotations: List[AnnotationPoint] = []
         self._annotations_visible = True
+        self._labels_visible = True
         self._type_counters: Dict[str, int] = {k: 0 for k in ANNOTATION_TYPES.keys()}
         self._current_annotation_type = "MINUTIA"
         self._measurements: List[MeasurementLine] = []
@@ -225,28 +234,35 @@ class AnnotatableView(QGraphicsView):
         self.viewport().setCursor(Qt.ArrowCursor)
 
     def set_annotation_mode(self, enabled: bool):
-        self._reset_modes()
         if enabled:
+            self._reset_modes()
             self._annotation_mode = True
             self.setDragMode(QGraphicsView.NoDrag)
             self.setCursor(Qt.CrossCursor)
             self.viewport().setCursor(Qt.CrossCursor)
+        else:
+            self._annotation_mode = False
 
     def set_calibration_mode(self, enabled: bool):
-        self._reset_modes()
         if enabled:
+            self._reset_modes()
             self._calibration_mode = True
             self.setDragMode(QGraphicsView.NoDrag)
             self.setCursor(Qt.CrossCursor)
             self.viewport().setCursor(Qt.CrossCursor)
+        else:
+            self._calibration_mode = False
 
     def set_measurement_mode(self, enabled: bool):
-        self._reset_modes()
         if enabled:
+            self._reset_modes()
             self._measurement_mode = True
             self.setDragMode(QGraphicsView.NoDrag)
             self.setCursor(Qt.CrossCursor)
             self.viewport().setCursor(Qt.CrossCursor)
+        else:
+            self._measurement_mode = False
+            self._measurement_start = None
 
     def is_annotation_mode(self) -> bool:
         return self._annotation_mode
@@ -287,6 +303,7 @@ class AnnotatableView(QGraphicsView):
             self._update_counter_from_label(a_type, label)
         point = AnnotationPoint(x, y, a_type, label_to_use)
         point.setVisible(self._annotations_visible)
+        point.set_label_visible(self._labels_visible)
         scene.addItem(point)
         self._annotations.append(point)
         self.annotations_changed.emit()
@@ -313,6 +330,12 @@ class AnnotatableView(QGraphicsView):
         self._annotations_visible = visible
         for point in self._annotations:
             point.setVisible(visible)
+
+    def set_labels_visible(self, visible: bool):
+        """Affiche/masque les numéros des annotations."""
+        self._labels_visible = visible
+        for point in self._annotations:
+            point.set_label_visible(visible)
 
     def are_annotations_visible(self) -> bool:
         return self._annotations_visible
@@ -438,10 +461,30 @@ class ComparisonView(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        # État des images (PIL originales + DPI calibré)
+        # État des images (PIL originales + DPI calibré + navigation NIST)
         self.image_state = {
-            "left": {"base_image": None, "dpi": None, "rotation": 0, "enhancements": self._default_enhancements()},
-            "right": {"base_image": None, "dpi": None, "rotation": 0, "enhancements": self._default_enhancements()},
+            "left": {
+                "base_image": None,
+                "original_image": None,
+                "dpi": None,
+                "rotation": 0,
+                "enhancements": self._default_enhancements(),
+                "nist_file": None,          # NISTFile object if loaded
+                "nist_images": [],          # List of (record_type, idc, record, label)
+                "nist_index": 0,            # Current image index
+                "file_path": None,          # Path to loaded file
+            },
+            "right": {
+                "base_image": None,
+                "original_image": None,
+                "dpi": None,
+                "rotation": 0,
+                "enhancements": self._default_enhancements(),
+                "nist_file": None,
+                "nist_images": [],
+                "nist_index": 0,
+                "file_path": None,
+            },
         }
         # Points de calibration temporaires
         self.calibration_points: List[Tuple[float, float]] = []
@@ -453,8 +496,12 @@ class ComparisonView(QWidget):
         self.right_pixmap_item = None
         self.views_linked = False
         self._syncing_pan = False
+        self._pan_link_offset = {"h": 0, "v": 0}
         self.module_frame = None
         self._icon_cache: Dict[str, QIcon] = {}
+
+        # Côté actif pour les ajustements (toggle unique)
+        self.active_adjustment_side = "left"
 
         self._build_ui()
         self._connect_signals()
@@ -476,29 +523,51 @@ class ComparisonView(QWidget):
         main_row.setContentsMargins(0, 0, 0, 0)
         main_row.setSpacing(8)
 
+        # ═══════════════════════════════════════════════════════════════════
         # Colonne gauche
-        self.left_label = QLabel("Aucune image chargée (gauche)")
-        self.left_label.setStyleSheet("background: rgba(0,0,0,0.04); padding: 4px 8px; border-radius: 6px;")
+        # ═══════════════════════════════════════════════════════════════════
         self.left_view = AnnotatableView()
         self.left_scene = QGraphicsScene()
+        self.left_view.setResizeAnchor(QGraphicsView.AnchorViewCenter)
+        self.left_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.left_view.setScene(self.left_scene)
+
         left_box = QVBoxLayout()
         left_box.setContentsMargins(0, 0, 0, 0)
         left_box.setSpacing(4)
+
+        # Header gauche: [Importer] [filename] ─── [● count]
         left_header = QHBoxLayout()
-        self.left_import_btn = QPushButton("Importer gauche")
+        left_header.setSpacing(8)
+        self.left_import_btn = QPushButton("Importer")
         self.left_import_btn.clicked.connect(lambda: self._browse_and_load("left"))
         left_header.addWidget(self.left_import_btn)
+
+        self.left_label = QLabel("Aucune image")
+        self.left_label.setStyleSheet("background: rgba(0,0,0,0.04); padding: 4px 8px; border-radius: 6px;")
+        self.left_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         left_header.addWidget(self.left_label)
+
+        self.left_count_label = QLabel("")
+        self.left_count_label.setStyleSheet("color: #22c55e; font-weight: bold; padding: 4px 8px;")
+        left_header.addWidget(self.left_count_label)
+
         left_box.addLayout(left_header)
         left_box.addWidget(self.left_view)
+
+        # Navigation NIST gauche (masquée par défaut)
+        self.left_nist_nav = self._build_nist_nav("left")
+        left_box.addWidget(self.left_nist_nav)
+
         main_row.addLayout(left_box, 5)
 
+        # ═══════════════════════════════════════════════════════════════════
         # Colonne droite avec module à droite de l'image
-        self.right_label = QLabel("Aucune image chargée (droite)")
-        self.right_label.setStyleSheet("background: rgba(0,0,0,0.04); padding: 4px 8px; border-radius: 6px;")
+        # ═══════════════════════════════════════════════════════════════════
         self.right_view = AnnotatableView()
         self.right_scene = QGraphicsScene()
+        self.right_view.setResizeAnchor(QGraphicsView.AnchorViewCenter)
+        self.right_view.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.right_view.setScene(self.right_scene)
 
         right_inner = QHBoxLayout()
@@ -508,24 +577,37 @@ class ComparisonView(QWidget):
         right_image_col = QVBoxLayout()
         right_image_col.setContentsMargins(0, 0, 0, 0)
         right_image_col.setSpacing(4)
+
+        # Header droite: [Importer] [filename] ─── [● count]
         right_header = QHBoxLayout()
-        self.right_import_btn = QPushButton("Importer droite")
+        right_header.setSpacing(8)
+        self.right_import_btn = QPushButton("Importer")
         self.right_import_btn.clicked.connect(lambda: self._browse_and_load("right"))
         right_header.addWidget(self.right_import_btn)
+
+        self.right_label = QLabel("Aucune image")
+        self.right_label.setStyleSheet("background: rgba(0,0,0,0.04); padding: 4px 8px; border-radius: 6px;")
+        self.right_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         right_header.addWidget(self.right_label)
+
+        self.right_count_label = QLabel("")
+        self.right_count_label.setStyleSheet("color: #22c55e; font-weight: bold; padding: 4px 8px;")
+        right_header.addWidget(self.right_count_label)
+
         right_image_col.addLayout(right_header)
         right_image_col.addWidget(self.right_view)
 
-        # Module calibrate/resample + amélioration à droite de l'image
+        # Navigation NIST droite (masquée par défaut)
+        self.right_nist_nav = self._build_nist_nav("right")
+        right_image_col.addWidget(self.right_nist_nav)
+
+        # Module calibrate/resample + amélioration à droite de l'image (unifié)
         self.module_frame = QWidget()
-        self.module_frame.setMinimumWidth(260)
+        self.module_frame.setMinimumWidth(280)
         mod_layout = QVBoxLayout()
         mod_layout.setContentsMargins(6, 6, 6, 6)
         mod_layout.setSpacing(8)
-        mod_tabs = QTabWidget()
-        mod_tabs.addTab(self._build_calibration_panel(), "Calibrate / Resample")
-        mod_tabs.addTab(self._build_enhancement_panel(), "Amélioration")
-        mod_layout.addWidget(mod_tabs)
+        mod_layout.addWidget(self._build_unified_panel())
         self.module_frame.setLayout(mod_layout)
 
         right_inner.addLayout(right_image_col, 4)
@@ -534,10 +616,6 @@ class ComparisonView(QWidget):
         main_row.addLayout(right_inner, 5)
 
         layout.addLayout(main_row)
-
-        # Label compteur
-        self.annotation_count_label = QLabel("Annotations : G=0 | D=0")
-        layout.addWidget(self.annotation_count_label)
 
         # Type d'annotation par défaut
         self._on_annotation_type_changed()
@@ -554,7 +632,9 @@ class ComparisonView(QWidget):
         toolbar.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
         toolbar.setStyleSheet("QToolBar { spacing: 6px; }")
 
-        # Groupe exclusif pour les modes (pan / annoter / mesurer)
+        # ═══════════════════════════════════════════════════════════════════
+        # Groupe 1 : Modes (Main / Annoter / Mesurer)
+        # ═══════════════════════════════════════════════════════════════════
         mode_group = QActionGroup(self)
         mode_group.setExclusive(True)
 
@@ -585,27 +665,29 @@ class ComparisonView(QWidget):
 
         toolbar.addSeparator()
 
-        clear_left_action = QAction("Effacer G", self)
-        self._set_icon(clear_left_action, "clear_left")
-        clear_left_action.triggered.connect(lambda: self._clear_annotations("left"))
-        toolbar.addAction(clear_left_action)
+        # ═══════════════════════════════════════════════════════════════════
+        # Groupe 2 : Contrôles d'annotation (Type + Masquer)
+        # ═══════════════════════════════════════════════════════════════════
+        type_column = QVBoxLayout()
+        type_column.setContentsMargins(0, 0, 0, 0)
+        type_column.setSpacing(2)
+        self.annotation_type_label = QLabel("Type :")
+        type_column.addWidget(self.annotation_type_label)
 
-        clear_right_action = QAction("Effacer D", self)
-        self._set_icon(clear_right_action, "clear_right")
-        clear_right_action.triggered.connect(lambda: self._clear_annotations("right"))
-        toolbar.addAction(clear_right_action)
+        self.annotation_type_combo = QComboBox()
+        for key in ANNOTATION_TYPES.keys():
+            self.annotation_type_combo.addItem(key.title(), key)
+        self.annotation_type_combo.currentIndexChanged.connect(self._on_annotation_type_changed)
+        type_column.addWidget(self.annotation_type_combo)
 
-        clear_all_action = QAction("Tout effacer", self)
-        self._set_icon(clear_all_action, "clear_all")
-        clear_all_action.triggered.connect(self._clear_all_annotations)
-        toolbar.addAction(clear_all_action)
+        self.numbering_checkbox = QCheckBox("Numéroter")
+        self.numbering_checkbox.setChecked(True)
+        self.numbering_checkbox.toggled.connect(self._on_numbering_toggled)
+        type_column.addWidget(self.numbering_checkbox)
 
-        clear_measures_action = QAction("Effacer mesures", self)
-        self._set_icon(clear_measures_action, "measure_clear")
-        clear_measures_action.triggered.connect(self._clear_measurements)
-        toolbar.addAction(clear_measures_action)
-
-        toolbar.addSeparator()
+        type_wrapper = QWidget()
+        type_wrapper.setLayout(type_column)
+        toolbar.addWidget(type_wrapper)
 
         self.visibility_action = QAction("Masquer", self)
         self.visibility_action.setCheckable(True)
@@ -615,216 +697,590 @@ class ComparisonView(QWidget):
 
         toolbar.addSeparator()
 
-        # Type d'annotation
-        toolbar.addWidget(QLabel("Type :"))
-        self.annotation_type_combo = QComboBox()
-        for key in ANNOTATION_TYPES.keys():
-            self.annotation_type_combo.addItem(key.title(), key)
-        self.annotation_type_combo.currentIndexChanged.connect(self._on_annotation_type_changed)
-        toolbar.addWidget(self.annotation_type_combo)
+        # ═══════════════════════════════════════════════════════════════════
+        # Groupe 3 : Menu Effacer (dropdown)
+        # ═══════════════════════════════════════════════════════════════════
+        clear_menu = QMenu(self)
+
+        clear_left_action = QAction("Annotations gauche", self)
+        self._set_icon(clear_left_action, "clear_left")
+        clear_left_action.triggered.connect(lambda: self._clear_annotations("left"))
+        clear_menu.addAction(clear_left_action)
+
+        clear_right_action = QAction("Annotations droite", self)
+        self._set_icon(clear_right_action, "clear_right")
+        clear_right_action.triggered.connect(lambda: self._clear_annotations("right"))
+        clear_menu.addAction(clear_right_action)
+
+        clear_all_action = QAction("Toutes les annotations", self)
+        self._set_icon(clear_all_action, "clear_all")
+        clear_all_action.triggered.connect(self._clear_all_annotations)
+        clear_menu.addAction(clear_all_action)
+
+        clear_menu.addSeparator()
+
+        clear_measures_action = QAction("Mesures", self)
+        self._set_icon(clear_measures_action, "measure_clear")
+        clear_measures_action.triggered.connect(self._clear_measurements)
+        clear_menu.addAction(clear_measures_action)
+
+        clear_button = QToolButton()
+        clear_button.setText("Effacer")
+        clear_button.setToolTip("Effacer annotations ou mesures")
+        clear_button.setMenu(clear_menu)
+        clear_button.setPopupMode(QToolButton.InstantPopup)
+        clear_button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self._set_icon_toolbutton(clear_button, "clear_all")
+        toolbar.addWidget(clear_button)
 
         toolbar.addSeparator()
 
-        self.link_views_action = QAction("Lier les vues", self)
+        # ═══════════════════════════════════════════════════════════════════
+        # Groupe 4 : Vues (Lier / Reset zoom)
+        # ═══════════════════════════════════════════════════════════════════
+        self.link_views_action = QAction("Lier", self)
         self.link_views_action.setCheckable(True)
         self.link_views_action.setToolTip("Synchroniser zoom/pan entre gauche et droite")
         self._set_icon(self.link_views_action, "link")
         self.link_views_action.toggled.connect(self._on_link_views_toggled)
         toolbar.addAction(self.link_views_action)
 
-        self.toggle_side_panel_action = QAction("Réglages", self)
-        self.toggle_side_panel_action.setCheckable(True)
-        self.toggle_side_panel_action.setChecked(True)
-        self.toggle_side_panel_action.setToolTip("Afficher/masquer les panneaux Calibration/Amélioration")
-        self._set_icon(self.toggle_side_panel_action, "tune")
-        self.toggle_side_panel_action.toggled.connect(self._on_toggle_side_panel)
-        toolbar.addAction(self.toggle_side_panel_action)
-
         self.reset_zoom_action = QAction("Reset zoom", self)
         self._set_icon(self.reset_zoom_action, "reset_zoom")
         self.reset_zoom_action.triggered.connect(self.reset_zoom)
         toolbar.addAction(self.reset_zoom_action)
 
-        export_action = QAction("Exporter JPG", self)
+        # ═══════════════════════════════════════════════════════════════════
+        # Spacer → pousse les actions suivantes à droite
+        # ═══════════════════════════════════════════════════════════════════
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        toolbar.addWidget(spacer)
+
+        # ═══════════════════════════════════════════════════════════════════
+        # Groupe 5 : Export + Ajustements (à droite)
+        # ═══════════════════════════════════════════════════════════════════
+        export_action = QAction("Exporter", self)
+        export_action.setToolTip("Exporter la comparaison côte à côte")
         self._set_icon(export_action, "export")
         export_action.triggered.connect(self._export_comparison)
         toolbar.addAction(export_action)
 
+        self.toggle_side_panel_action = QAction("Ajustements", self)
+        self.toggle_side_panel_action.setCheckable(True)
+        self.toggle_side_panel_action.setChecked(False)  # Masqué par défaut
+        self.toggle_side_panel_action.setToolTip("Afficher/masquer Calibration, Resample et Amélioration d'image")
+        self._set_icon(self.toggle_side_panel_action, "photo_cog")
+        self.toggle_side_panel_action.toggled.connect(self._on_toggle_side_panel)
+        toolbar.addAction(self.toggle_side_panel_action)
+
         layout.addWidget(toolbar)
 
-    def _build_calibration_panel(self) -> QWidget:
-        """Panneau de calibration DPI et rééchantillonnage."""
+        # Désactiver les contrôles d'annotation par défaut (mode Main actif)
+        self._set_annotation_controls_enabled(False)
+
+    def _build_nist_nav(self, side: str) -> QWidget:
+        """Barre de navigation pour les fichiers NIST (hauteur fixe, toujours présente)."""
+        widget = QWidget()
+        # Hauteur fixe pour éviter le redimensionnement des vues
+        widget.setFixedHeight(28)
+
+        layout = QHBoxLayout()
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(6)
+
+        # Bouton précédent
+        prev_btn = QPushButton("◀")
+        prev_btn.setFixedWidth(28)
+        prev_btn.setToolTip("Image précédente")
+        prev_btn.clicked.connect(lambda: self._nist_nav_prev(side))
+        layout.addWidget(prev_btn)
+
+        # Combo de sélection
+        combo = QComboBox()
+        combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        combo.setPlaceholderText("— Image standard —")
+        combo.currentIndexChanged.connect(lambda idx: self._on_nist_nav_changed(side, idx))
+        layout.addWidget(combo)
+
+        # Bouton suivant
+        next_btn = QPushButton("▶")
+        next_btn.setFixedWidth(28)
+        next_btn.setToolTip("Image suivante")
+        next_btn.clicked.connect(lambda: self._nist_nav_next(side))
+        layout.addWidget(next_btn)
+
+        widget.setLayout(layout)
+
+        # Stocker les références
+        if side == "left":
+            self._left_nist_combo = combo
+            self._left_nist_prev = prev_btn
+            self._left_nist_next = next_btn
+        else:
+            self._right_nist_combo = combo
+            self._right_nist_prev = prev_btn
+            self._right_nist_next = next_btn
+
+        # Désactivé par défaut (pas de NIST chargé)
+        self._set_nist_nav_enabled(side, False)
+
+        return widget
+
+    def _set_nist_nav_enabled(self, side: str, enabled: bool):
+        """Active/désactive la barre de navigation NIST."""
+        if side == "left":
+            self._left_nist_combo.setEnabled(enabled)
+            self._left_nist_prev.setEnabled(enabled)
+            self._left_nist_next.setEnabled(enabled)
+        else:
+            self._right_nist_combo.setEnabled(enabled)
+            self._right_nist_prev.setEnabled(enabled)
+            self._right_nist_next.setEnabled(enabled)
+
+    def _nist_nav_prev(self, side: str):
+        """Navigue vers l'image NIST précédente."""
+        state = self.image_state[side]
+        if not state["nist_images"]:
+            return
+        new_idx = max(0, state["nist_index"] - 1)
+        if new_idx != state["nist_index"]:
+            combo = self._left_nist_combo if side == "left" else self._right_nist_combo
+            combo.setCurrentIndex(new_idx)
+
+    def _nist_nav_next(self, side: str):
+        """Navigue vers l'image NIST suivante."""
+        state = self.image_state[side]
+        if not state["nist_images"]:
+            return
+        new_idx = min(len(state["nist_images"]) - 1, state["nist_index"] + 1)
+        if new_idx != state["nist_index"]:
+            combo = self._left_nist_combo if side == "left" else self._right_nist_combo
+            combo.setCurrentIndex(new_idx)
+
+    def _on_nist_nav_changed(self, side: str, index: int):
+        """Appelé quand l'utilisateur sélectionne une image dans la navigation NIST."""
+        state = self.image_state[side]
+        if index < 0 or index >= len(state["nist_images"]):
+            return
+        state["nist_index"] = index
+
+        # Charger l'image sélectionnée
+        record_type, idc, record, label = state["nist_images"][index]
+        pil_img, _ = self._record_to_image(record)
+        if pil_img:
+            state["base_image"] = pil_img
+            state["original_image"] = pil_img.copy()
+            state["dpi"] = None
+            state["rotation"] = 0
+            state["enhancements"] = self._default_enhancements()
+
+            # Effacer annotations et mesures
+            view = self.left_view if side == "left" else self.right_view
+            view.clear_annotations()
+            view.clear_measurements()
+
+            self._sync_controls_to_side()
+            self._render_image(side)
+            self._update_annotation_count()
+
+    def _populate_nist_nav(self, side: str):
+        """Remplit le combo de navigation avec les images du fichier NIST."""
+        state = self.image_state[side]
+        combo = self._left_nist_combo if side == "left" else self._right_nist_combo
+
+        nist_images = state.get("nist_images", [])
+        if not nist_images:
+            # Désactiver et vider le combo
+            combo.blockSignals(True)
+            combo.clear()
+            combo.blockSignals(False)
+            self._set_nist_nav_enabled(side, False)
+            return
+
+        # Peupler le combo
+        combo.blockSignals(True)
+        combo.clear()
+        for record_type, idc, record, label in nist_images:
+            combo.addItem(f"{label} (T{record_type})", (record_type, idc))
+        combo.setCurrentIndex(state.get("nist_index", 0))
+        combo.blockSignals(False)
+
+        self._set_nist_nav_enabled(side, True)
+
+    def _build_unified_panel(self) -> QWidget:
+        """Panneau unifié avec toggle pour sélectionner l'image cible."""
         widget = QWidget()
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(8)
+        main_layout.setContentsMargins(8, 8, 8, 8)
+        main_layout.setSpacing(12)
 
-        # Carte gauche
-        main_layout.addWidget(self._build_calib_card("left", "Image gauche"))
-        # Carte droite
-        main_layout.addWidget(self._build_calib_card("right", "Image droite"))
+        # === Toggle switch pour sélectionner le côté ===
+        toggle_frame = QFrame()
+        toggle_frame.setStyleSheet("""
+            QFrame {
+                background: rgba(59, 130, 246, 0.08);
+                border-radius: 8px;
+                padding: 4px;
+            }
+        """)
+        toggle_layout = QHBoxLayout()
+        toggle_layout.setContentsMargins(8, 6, 8, 6)
+        toggle_layout.setSpacing(12)
 
-        # Rotation (commune)
+        toggle_layout.addWidget(QLabel("<b>Appliquer à :</b>"))
+
+        self.side_toggle_group = QButtonGroup(self)
+        self.left_radio = QRadioButton("Image gauche")
+        self.left_radio.setChecked(True)
+        self.right_radio = QRadioButton("Image droite")
+        self.side_toggle_group.addButton(self.left_radio, 0)
+        self.side_toggle_group.addButton(self.right_radio, 1)
+        self.side_toggle_group.buttonClicked.connect(self._on_side_toggle_changed)
+
+        toggle_layout.addWidget(self.left_radio)
+        toggle_layout.addWidget(self.right_radio)
+        toggle_layout.addStretch()
+        toggle_frame.setLayout(toggle_layout)
+        main_layout.addWidget(toggle_frame)
+
+        # === Section Calibration / Resample ===
+        calib_group = QGroupBox("Calibration / Rééchantillonnage")
+        calib_layout = QVBoxLayout()
+        calib_layout.setContentsMargins(10, 10, 10, 10)
+        calib_layout.setSpacing(8)
+
+        # DPI actuel
+        self.unified_dpi_label = QLabel("DPI : Non calibré")
+        self.unified_dpi_label.setStyleSheet("font-weight: bold; color: #3b82f6;")
+        calib_layout.addWidget(self.unified_dpi_label)
+
+        # Bouton Calibrer
+        calib_btn = QPushButton("Calibrer (2 points)")
+        calib_btn.setToolTip("Cliquez 2 points sur l'image et entrez la distance réelle en mm")
+        calib_btn.clicked.connect(self._start_calibration_unified)
+        calib_layout.addWidget(calib_btn)
+
+        # Ligne Resample
+        resample_row = QHBoxLayout()
+        resample_row.setSpacing(8)
+        self.unified_target_dpi = QSpinBox()
+        self.unified_target_dpi.setRange(72, 1200)
+        self.unified_target_dpi.setValue(500)
+        self.unified_target_dpi.setSuffix(" DPI")
+        resample_row.addWidget(QLabel("Cible :"))
+        resample_row.addWidget(self.unified_target_dpi)
+        resample_btn = QPushButton("Rééchantillonner")
+        resample_btn.setToolTip("Convertir l'image au DPI cible")
+        resample_btn.clicked.connect(self._resample_image_unified)
+        resample_row.addWidget(resample_btn)
+        calib_layout.addLayout(resample_row)
+
+        # Ligne actions (reset + export)
+        actions_row = QHBoxLayout()
+        actions_row.setSpacing(8)
+
+        reset_img_btn = QPushButton("Réinitialiser image")
+        reset_img_btn.setToolTip("Restaurer l'image originale (annule resample, rotation, améliorations)")
+        reset_img_btn.clicked.connect(self._reset_image_unified)
+        actions_row.addWidget(reset_img_btn)
+
+        export_img_btn = QPushButton("Exporter JPG")
+        export_img_btn.setToolTip("Exporter l'image avec tous les réglages appliqués")
+        export_img_btn.clicked.connect(self._export_image_unified)
+        actions_row.addWidget(export_img_btn)
+
+        calib_layout.addLayout(actions_row)
+
+        calib_group.setLayout(calib_layout)
+        main_layout.addWidget(calib_group)
+
+        # === Section Amélioration ===
+        enhance_group = QGroupBox("Amélioration d'image")
+        enhance_layout = QVBoxLayout()
+        enhance_layout.setContentsMargins(10, 10, 10, 10)
+        enhance_layout.setSpacing(6)
+
+        # Luminosité
+        enhance_layout.addWidget(QLabel("Luminosité"))
+        self.unified_brightness = QSlider(Qt.Horizontal)
+        self.unified_brightness.setRange(-100, 100)
+        self.unified_brightness.setValue(0)
+        self.unified_brightness.setToolTip("Luminosité (-100 à +100)")
+        self.unified_brightness.valueChanged.connect(self._on_unified_enhancement_changed)
+        enhance_layout.addWidget(self.unified_brightness)
+
+        # Contraste
+        enhance_layout.addWidget(QLabel("Contraste"))
+        self.unified_contrast = QSlider(Qt.Horizontal)
+        self.unified_contrast.setRange(50, 200)
+        self.unified_contrast.setValue(100)
+        self.unified_contrast.setToolTip("Contraste (0.5 à 2.0)")
+        self.unified_contrast.valueChanged.connect(self._on_unified_enhancement_changed)
+        enhance_layout.addWidget(self.unified_contrast)
+
+        # Gamma
+        enhance_layout.addWidget(QLabel("Gamma"))
+        self.unified_gamma = QSlider(Qt.Horizontal)
+        self.unified_gamma.setRange(50, 200)
+        self.unified_gamma.setValue(100)
+        self.unified_gamma.setToolTip("Gamma (0.5 à 2.0)")
+        self.unified_gamma.valueChanged.connect(self._on_unified_enhancement_changed)
+        enhance_layout.addWidget(self.unified_gamma)
+
+        # Inversion
+        self.unified_invert = QPushButton("Inverser (négatif)")
+        self.unified_invert.setCheckable(True)
+        self.unified_invert.clicked.connect(self._on_unified_enhancement_changed)
+        enhance_layout.addWidget(self.unified_invert)
+
+        # Reset
+        reset_btn = QPushButton("Réinitialiser")
+        reset_btn.clicked.connect(self._reset_enhancements_unified)
+        enhance_layout.addWidget(reset_btn)
+
+        enhance_group.setLayout(enhance_layout)
+        main_layout.addWidget(enhance_group)
+
+        # === Section Rotation ===
         rot_group = QGroupBox("Rotation")
-        rot_layout = QVBoxLayout()
-        rot_layout.setContentsMargins(8, 6, 8, 6)
-        rot_layout.setSpacing(6)
+        rot_layout = QHBoxLayout()
+        rot_layout.setContentsMargins(10, 10, 10, 10)
+        rot_layout.setSpacing(8)
 
-        rot_left_row = QHBoxLayout()
-        rot_left_row.addWidget(QLabel("Gauche"))
-        btn_l_cw = QPushButton("↻ 90°")
-        btn_l_cw.clicked.connect(lambda: self._rotate_image("left", 90))
-        rot_left_row.addWidget(btn_l_cw)
-        btn_l_ccw = QPushButton("↺ 90°")
-        btn_l_ccw.clicked.connect(lambda: self._rotate_image("left", -90))
-        rot_left_row.addWidget(btn_l_ccw)
-        btn_l_reset = QPushButton("Reset")
-        btn_l_reset.clicked.connect(lambda: self._reset_rotation("left"))
-        rot_left_row.addWidget(btn_l_reset)
-        rot_layout.addLayout(rot_left_row)
+        btn_cw = QPushButton("↻ 90°")
+        btn_cw.clicked.connect(lambda: self._rotate_image_unified(90))
+        rot_layout.addWidget(btn_cw)
 
-        rot_right_row = QHBoxLayout()
-        rot_right_row.addWidget(QLabel("Droite"))
-        btn_r_cw = QPushButton("↻ 90°")
-        btn_r_cw.clicked.connect(lambda: self._rotate_image("right", 90))
-        rot_right_row.addWidget(btn_r_cw)
-        btn_r_ccw = QPushButton("↺ 90°")
-        btn_r_ccw.clicked.connect(lambda: self._rotate_image("right", -90))
-        rot_right_row.addWidget(btn_r_ccw)
-        btn_r_reset = QPushButton("Reset")
-        btn_r_reset.clicked.connect(lambda: self._reset_rotation("right"))
-        rot_right_row.addWidget(btn_r_reset)
-        rot_layout.addLayout(rot_right_row)
+        btn_ccw = QPushButton("↺ 90°")
+        btn_ccw.clicked.connect(lambda: self._rotate_image_unified(-90))
+        rot_layout.addWidget(btn_ccw)
+
+        btn_reset = QPushButton("Reset")
+        btn_reset.clicked.connect(self._reset_rotation_unified)
+        rot_layout.addWidget(btn_reset)
 
         rot_group.setLayout(rot_layout)
         main_layout.addWidget(rot_group)
 
+        main_layout.addStretch()
         widget.setLayout(main_layout)
         return widget
 
-    def _build_calib_card(self, side: str, title: str) -> QWidget:
-        """Carte visuelle combinant calibrage et rééchantillonnage pour un côté."""
-        frame = QFrame()
-        frame.setFrameShape(QFrame.StyledPanel)
-        frame.setStyleSheet(
-            """
-            QFrame {
-                border: 1px solid rgba(128,128,128,0.25);
-                border-radius: 10px;
-                background: transparent;
-            }
-            """
+    def _on_side_toggle_changed(self, button):
+        """Appelé quand le toggle gauche/droite change."""
+        self.active_adjustment_side = "left" if button == self.left_radio else "right"
+        self._sync_controls_to_side()
+
+    def _sync_controls_to_side(self):
+        """Synchronise les contrôles avec l'état du côté actif."""
+        side = self.active_adjustment_side
+        state = self.image_state[side]
+        enh = state.get("enhancements", self._default_enhancements())
+
+        # Bloquer les signaux pour éviter les boucles
+        self.unified_brightness.blockSignals(True)
+        self.unified_contrast.blockSignals(True)
+        self.unified_gamma.blockSignals(True)
+        self.unified_invert.blockSignals(True)
+
+        self.unified_brightness.setValue(int(enh.get("brightness", 0)))
+        self.unified_contrast.setValue(int(enh.get("contrast", 1.0) * 100))
+        self.unified_gamma.setValue(int(enh.get("gamma", 1.0) * 100))
+        self.unified_invert.setChecked(enh.get("invert", False))
+
+        self.unified_brightness.blockSignals(False)
+        self.unified_contrast.blockSignals(False)
+        self.unified_gamma.blockSignals(False)
+        self.unified_invert.blockSignals(False)
+
+        # Mettre à jour le DPI affiché
+        self._update_unified_dpi_label()
+
+    def _update_unified_dpi_label(self):
+        """Met à jour le label DPI pour le côté actif."""
+        side = self.active_adjustment_side
+        dpi = self.image_state[side]["dpi"]
+        side_name = "gauche" if side == "left" else "droite"
+        if dpi:
+            self.unified_dpi_label.setText(f"DPI ({side_name}) : {dpi:.1f}")
+        else:
+            self.unified_dpi_label.setText(f"DPI ({side_name}) : Non calibré")
+
+    def _start_calibration_unified(self):
+        """Démarre la calibration pour le côté actif."""
+        self._start_calibration(self.active_adjustment_side)
+
+    def _resample_image_unified(self):
+        """Rééchantillonne l'image du côté actif."""
+        side = self.active_adjustment_side
+        state = self.image_state[side]
+        pil_img = state["base_image"]
+        current_dpi = state["dpi"]
+
+        if pil_img is None:
+            QMessageBox.warning(self, "Rééchantillonnage", "Aucune image chargée.")
+            return
+
+        if current_dpi is None:
+            QMessageBox.warning(
+                self,
+                "Rééchantillonnage",
+                "Veuillez d'abord calibrer l'image pour déterminer son DPI actuel."
+            )
+            return
+
+        target_dpi = self.unified_target_dpi.value()
+
+        if abs(target_dpi - current_dpi) < 1:
+            QMessageBox.information(self, "Rééchantillonnage", "L'image est déjà au DPI cible.")
+            return
+
+        # Calculer le ratio de redimensionnement
+        ratio = target_dpi / current_dpi
+        new_width = int(pil_img.width * ratio)
+        new_height = int(pil_img.height * ratio)
+
+        # Rééchantillonner
+        resampled = pil_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+        # Mettre à jour l'état
+        state["base_image"] = resampled
+        state["dpi"] = target_dpi
+
+        # Mettre à jour annotations + mesures en fonction du ratio
+        annotations_meta = self._scale_annotation_meta(side, ratio)
+        measurements_meta = self._scale_measurement_meta(side, ratio)
+
+        self._render_image(side, annotations_meta=annotations_meta, measurements_meta=measurements_meta)
+        self._update_unified_dpi_label()
+
+        QMessageBox.information(
+            self,
+            "Rééchantillonnage",
+            f"Image rééchantillonnée de {current_dpi:.0f} DPI vers {target_dpi} DPI.\n"
+            f"Nouvelle taille : {new_width} x {new_height} px"
         )
-        outer = QVBoxLayout()
-        outer.setContentsMargins(10, 10, 10, 10)
-        outer.setSpacing(8)
-        outer.addWidget(QLabel(f"<b>{title}</b>"))
 
-        # Ligne Calibrate / Resample côte à côte
-        row = QHBoxLayout()
-        row.setSpacing(10)
+    def _on_unified_enhancement_changed(self):
+        """Met à jour les améliorations pour le côté actif."""
+        side = self.active_adjustment_side
+        enh = {
+            "brightness": float(self.unified_brightness.value()),
+            "contrast": float(self.unified_contrast.value()) / 100.0,
+            "gamma": float(self.unified_gamma.value()) / 100.0,
+            "invert": self.unified_invert.isChecked(),
+        }
+        self.image_state[side]["enhancements"] = enh
+        self._render_image(side)
 
-        # Bloc Calibrate
-        calib_box = QVBoxLayout()
-        calib_box.setSpacing(6)
-        dpi_label = QLabel("DPI : Non calibré")
-        if side == "left":
-            self.left_dpi_label = dpi_label
-        else:
-            self.right_dpi_label = dpi_label
-        calib_box.addWidget(dpi_label)
+    def _reset_enhancements_unified(self):
+        """Réinitialise les améliorations pour le côté actif."""
+        side = self.active_adjustment_side
+        defaults = self._default_enhancements()
+        self.image_state[side]["enhancements"] = defaults
 
-        calib_btn = QPushButton("Calibrer (2 points)")
-        calib_btn.setToolTip("Cliquez 2 points sur l'image et entrez la distance réelle en mm")
-        calib_btn.clicked.connect(lambda: self._start_calibration(side))
-        calib_box.addWidget(calib_btn)
+        # Mettre à jour les contrôles
+        self.unified_brightness.blockSignals(True)
+        self.unified_brightness.setValue(0)
+        self.unified_brightness.blockSignals(False)
 
-        # Bloc Resample
-        res_box = QVBoxLayout()
-        res_box.setSpacing(6)
-        target = QSpinBox()
-        target.setRange(72, 1200)
-        target.setValue(500)
-        target.setSuffix(" DPI")
-        if side == "left":
-            self.left_target_dpi = target
-        else:
-            self.right_target_dpi = target
-        res_btn = QPushButton("Rééchantillonner")
-        res_btn.setToolTip("Convertir l'image au DPI cible")
-        res_btn.clicked.connect(lambda: self._resample_image(side))
-        res_box.addWidget(target)
-        res_box.addWidget(res_btn)
+        self.unified_contrast.blockSignals(True)
+        self.unified_contrast.setValue(100)
+        self.unified_contrast.blockSignals(False)
 
-        row.addLayout(calib_box)
-        row.addLayout(res_box)
-        row.addStretch()
-        outer.addLayout(row)
+        self.unified_gamma.blockSignals(True)
+        self.unified_gamma.setValue(100)
+        self.unified_gamma.blockSignals(False)
 
-        frame.setLayout(outer)
-        return frame
+        self.unified_invert.blockSignals(True)
+        self.unified_invert.setChecked(False)
+        self.unified_invert.blockSignals(False)
 
-    def _build_enhancement_panel(self) -> QWidget:
-        """Panneau d'amélioration d'image (luminosité, contraste, gamma, inversion)."""
-        group = QGroupBox("Amélioration d'image")
-        group_layout = QHBoxLayout()
-        group_layout.setContentsMargins(8, 6, 8, 6)
-        group_layout.setSpacing(20)
+        self._render_image(side)
 
-        self.enhance_controls = {"left": {}, "right": {}}
+    def _rotate_image_unified(self, degrees: int):
+        """Rotation pour le côté actif."""
+        self._rotate_image(self.active_adjustment_side, degrees)
 
-        for side, title in (("left", "Image gauche"), ("right", "Image droite")):
-            box = QVBoxLayout()
-            box.addWidget(QLabel(f"<b>{title}</b>"))
+    def _reset_rotation_unified(self):
+        """Reset rotation pour le côté actif."""
+        self._reset_rotation(self.active_adjustment_side)
 
-            # Luminosité
-            bright_slider = QSlider(Qt.Horizontal)
-            bright_slider.setRange(-100, 100)
-            bright_slider.setValue(0)
-            bright_slider.setToolTip("Luminosité (-100 à +100)")
-            bright_slider.valueChanged.connect(lambda _v, s=side: self._on_enhancement_changed(s))
-            box.addWidget(QLabel("Luminosité"))
-            box.addWidget(bright_slider)
+    def _export_image_unified(self):
+        """Exporte l'image du côté actif avec tous les réglages appliqués."""
+        side = self.active_adjustment_side
+        state = self.image_state[side]
+        base_img = state.get("base_image")
 
-            # Contraste
-            contrast_slider = QSlider(Qt.Horizontal)
-            contrast_slider.setRange(50, 200)  # 0.5 à 2.0
-            contrast_slider.setValue(100)
-            contrast_slider.setToolTip("Contraste (0.5 à 2.0)")
-            contrast_slider.valueChanged.connect(lambda _v, s=side: self._on_enhancement_changed(s))
-            box.addWidget(QLabel("Contraste"))
-            box.addWidget(contrast_slider)
+        if base_img is None:
+            QMessageBox.warning(self, "Export", "Aucune image chargée.")
+            return
 
-            # Gamma
-            gamma_slider = QSlider(Qt.Horizontal)
-            gamma_slider.setRange(50, 200)  # 0.5 à 2.0
-            gamma_slider.setValue(100)
-            gamma_slider.setToolTip("Gamma (0.5 à 2.0)")
-            gamma_slider.valueChanged.connect(lambda _v, s=side: self._on_enhancement_changed(s))
-            box.addWidget(QLabel("Gamma"))
-            box.addWidget(gamma_slider)
+        # Appliquer rotation + améliorations
+        rotated = self._apply_rotation(base_img, state.get("rotation", 0))
+        final_img = self._apply_enhancements(rotated, state.get("enhancements", self._default_enhancements()))
 
-            invert_btn = QPushButton("Inverser (négatif)")
-            invert_btn.setCheckable(True)
-            invert_btn.clicked.connect(lambda _checked, s=side: self._on_enhancement_changed(s))
-            box.addWidget(invert_btn)
+        # Dialogue de sauvegarde
+        side_name = "gauche" if side == "left" else "droite"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            f"Exporter l'image {side_name}",
+            f"image_{side_name}.jpg",
+            "Images JPEG (*.jpg *.jpeg);;Images PNG (*.png)"
+        )
+        if not file_path:
+            return
 
-            reset_btn = QPushButton("Réinitialiser")
-            reset_btn.clicked.connect(lambda _checked=False, s=side: self._reset_enhancements(s))
-            box.addWidget(reset_btn)
+        try:
+            # Préparer les métadonnées DPI si calibré
+            dpi = state.get("dpi")
+            save_kwargs = {"quality": 95}
+            if dpi:
+                save_kwargs["dpi"] = (dpi, dpi)
 
-            self.enhance_controls[side] = {
-                "brightness": bright_slider,
-                "contrast": contrast_slider,
-                "gamma": gamma_slider,
-                "invert": invert_btn,
-            }
+            # Sauvegarder
+            final_img.save(file_path, **save_kwargs)
+            QMessageBox.information(
+                self,
+                "Export réussi",
+                f"Image exportée vers :\n{file_path}"
+                + (f"\n\nDPI : {dpi:.0f}" if dpi else "")
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur d'export", f"Impossible de sauvegarder :\n{str(e)}")
 
-            group_layout.addLayout(box)
+    def _reset_image_unified(self):
+        """Réinitialise l'image du côté actif à son état original."""
+        side = self.active_adjustment_side
+        state = self.image_state[side]
+        original = state.get("original_image")
 
-        group_layout.addStretch()
-        group.setLayout(group_layout)
-        return group
+        if original is None:
+            QMessageBox.warning(self, "Réinitialiser", "Aucune image originale disponible.")
+            return
+
+        # Restaurer l'image originale
+        state["base_image"] = original.copy()
+        state["dpi"] = None
+        state["rotation"] = 0
+        state["enhancements"] = self._default_enhancements()
+
+        # Effacer annotations et mesures du côté
+        view = self.left_view if side == "left" else self.right_view
+        view.clear_annotations()
+        view.clear_measurements()
+
+        # Synchroniser les contrôles et re-rendre
+        self._sync_controls_to_side()
+        self._render_image(side)
+
+        side_name = "gauche" if side == "left" else "droite"
+        QMessageBox.information(
+            self,
+            "Image réinitialisée",
+            f"L'image {side_name} a été restaurée à son état original."
+        )
 
     def _connect_signals(self):
         self.left_view.annotations_changed.connect(self._update_annotation_count)
@@ -929,6 +1385,9 @@ class ComparisonView(QWidget):
                 10.0, 0.1, 1000.0, 2
             )
 
+            # Fin du mode calibration (nettoyer AVANT le render)
+            self._end_calibration(side)
+
             if ok and dist_mm > 0:
                 # Calculer le DPI : pixels / (mm / 25.4)
                 dpi = dist_pixels / (dist_mm / 25.4)
@@ -941,9 +1400,6 @@ class ComparisonView(QWidget):
                     "Calibration réussie",
                     f"DPI calculé : {dpi:.1f}"
                 )
-
-            # Fin du mode calibration
-            self._end_calibration(side)
 
     def _end_calibration(self, side: str):
         """Termine le mode calibration."""
@@ -962,22 +1418,25 @@ class ComparisonView(QWidget):
     def _clear_calibration_items(self, side: str):
         """Supprime les éléments visuels de calibration."""
         scene = self.left_scene if side == "left" else self.right_scene
-        for item in self.calibration_items:
-            if item.scene() == scene:
-                scene.removeItem(item)
-        self.calibration_items = [i for i in self.calibration_items if i.scene() is not None]
-        if self.calibration_line and self.calibration_line.scene() == scene:
-            scene.removeItem(self.calibration_line)
+        for item in self.calibration_items[:]:
+            try:
+                if item.scene() == scene:
+                    scene.removeItem(item)
+            except RuntimeError:
+                pass  # L'objet C++ a déjà été supprimé
+        self.calibration_items.clear()
+        if self.calibration_line:
+            try:
+                if self.calibration_line.scene() == scene:
+                    scene.removeItem(self.calibration_line)
+            except RuntimeError:
+                pass
             self.calibration_line = None
 
     def _update_dpi_label(self, side: str):
-        """Met à jour le label DPI."""
-        dpi = self.image_state[side]["dpi"]
-        label = self.left_dpi_label if side == "left" else self.right_dpi_label
-        if dpi:
-            label.setText(f"DPI : {dpi:.1f}")
-        else:
-            label.setText("DPI : Non calibré")
+        """Met à jour le label DPI (appelle le label unifié si c'est le côté actif)."""
+        if side == self.active_adjustment_side:
+            self._update_unified_dpi_label()
 
     # ─────────────────────────────────────────────────────────────────────
     # Rendu (rotation + enhancements)
@@ -1031,78 +1490,29 @@ class ComparisonView(QWidget):
         self._display_pil_image(side, enhanced, annotations_meta=annotations_meta, measurements_meta=measurements_meta)
 
     def _reset_enhancements(self, side: str):
-        """Réinitialise les sliders et le rendu."""
+        """Réinitialise les améliorations d'un côté et synchronise les contrôles si actif."""
         defaults = self._default_enhancements()
-        enh = self.enhance_controls[side]
-        enh["brightness"].blockSignals(True)
-        enh["brightness"].setValue(0)
-        enh["brightness"].blockSignals(False)
-        enh["contrast"].blockSignals(True)
-        enh["contrast"].setValue(100)
-        enh["contrast"].blockSignals(False)
-        enh["gamma"].blockSignals(True)
-        enh["gamma"].setValue(100)
-        enh["gamma"].blockSignals(False)
-        enh["invert"].blockSignals(True)
-        enh["invert"].setChecked(False)
-        enh["invert"].blockSignals(False)
-
         self.image_state[side]["enhancements"] = defaults
+
+        # Si c'est le côté actif, mettre à jour les contrôles unifiés
+        if side == self.active_adjustment_side:
+            self.unified_brightness.blockSignals(True)
+            self.unified_brightness.setValue(0)
+            self.unified_brightness.blockSignals(False)
+
+            self.unified_contrast.blockSignals(True)
+            self.unified_contrast.setValue(100)
+            self.unified_contrast.blockSignals(False)
+
+            self.unified_gamma.blockSignals(True)
+            self.unified_gamma.setValue(100)
+            self.unified_gamma.blockSignals(False)
+
+            self.unified_invert.blockSignals(True)
+            self.unified_invert.setChecked(False)
+            self.unified_invert.blockSignals(False)
+
         self._render_image(side)
-
-    # ─────────────────────────────────────────────────────────────────────
-    # Rééchantillonnage
-    # ─────────────────────────────────────────────────────────────────────
-
-    def _resample_image(self, side: str):
-        """Rééchantillonne l'image au DPI cible."""
-        state = self.image_state[side]
-        pil_img = state["base_image"]
-        current_dpi = state["dpi"]
-
-        if pil_img is None:
-            QMessageBox.warning(self, "Rééchantillonnage", "Aucune image chargée.")
-            return
-
-        if current_dpi is None:
-            QMessageBox.warning(
-                self,
-                "Rééchantillonnage",
-                "Veuillez d'abord calibrer l'image pour déterminer son DPI actuel."
-            )
-            return
-
-        target_dpi = self.left_target_dpi.value() if side == "left" else self.right_target_dpi.value()
-
-        if abs(target_dpi - current_dpi) < 1:
-            QMessageBox.information(self, "Rééchantillonnage", "L'image est déjà au DPI cible.")
-            return
-
-        # Calculer le ratio de redimensionnement
-        ratio = target_dpi / current_dpi
-        new_width = int(pil_img.width * ratio)
-        new_height = int(pil_img.height * ratio)
-
-        # Rééchantillonner
-        resampled = pil_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        # Mettre à jour l'état
-        state["base_image"] = resampled
-        state["dpi"] = target_dpi
-
-        # Mettre à jour annotations + mesures en fonction du ratio
-        annotations_meta = self._scale_annotation_meta(side, ratio)
-        measurements_meta = self._scale_measurement_meta(side, ratio)
-
-        self._render_image(side, annotations_meta=annotations_meta, measurements_meta=measurements_meta)
-        self._update_dpi_label(side)
-
-        QMessageBox.information(
-            self,
-            "Rééchantillonnage",
-            f"Image rééchantillonnée de {current_dpi:.0f} DPI vers {target_dpi} DPI.\n"
-            f"Nouvelle taille : {new_width} x {new_height} px"
-        )
 
     def _display_pil_image(
         self,
@@ -1141,11 +1551,32 @@ class ComparisonView(QWidget):
                     text = self._measurement_text(side, math.hypot(end[0] - start[0], end[1] - start[1]))
                     view.add_measurement(start, end, text)
 
+        self._fit_view_to_pixmap(view, pix)
         self._update_annotation_count()
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Ajustement vue/image
+    # ─────────────────────────────────────────────────────────────────────
+
+    def _fit_view_to_pixmap(self, view: AnnotatableView, pix: QPixmap):
+        """Ajuste la vue pour afficher l'image complète sans déformation."""
+        if not pix or pix.isNull():
+            return
+        view.resetTransform()
+        scene_rect = QRectF(pix.rect())
+        if scene_rect.isValid():
+            view.fitInView(scene_rect, Qt.KeepAspectRatio)
+        view._zoom_factor = 1.0
 
     # ─────────────────────────────────────────────────────────────────────
     # Modes toolbar
     # ─────────────────────────────────────────────────────────────────────
+
+    def _set_annotation_controls_enabled(self, enabled: bool):
+        """Active/désactive les contrôles d'annotation (Type combo et Masquer)."""
+        self.annotation_type_label.setEnabled(enabled)
+        self.annotation_type_combo.setEnabled(enabled)
+        self.visibility_action.setEnabled(enabled)
 
     def _on_pan_toggled(self, checked: bool):
         if checked:
@@ -1157,6 +1588,8 @@ class ComparisonView(QWidget):
             self.left_view.viewport().setCursor(Qt.OpenHandCursor)
             self.right_view.setCursor(Qt.OpenHandCursor)
             self.right_view.viewport().setCursor(Qt.OpenHandCursor)
+            # Verrouiller les contrôles d'annotation
+            self._set_annotation_controls_enabled(False)
 
     def _on_annotate_toggled(self, checked: bool):
         if checked:
@@ -1168,6 +1601,8 @@ class ComparisonView(QWidget):
             self.left_view.viewport().setCursor(Qt.CrossCursor)
             self.right_view.setCursor(Qt.CrossCursor)
             self.right_view.viewport().setCursor(Qt.CrossCursor)
+            # Déverrouiller les contrôles d'annotation
+            self._set_annotation_controls_enabled(True)
         else:
             # si on sort du mode annotation, appliquer le mode actif (mesure ou pan)
             if self.measure_action.isChecked():
@@ -1192,18 +1627,24 @@ class ComparisonView(QWidget):
         self.right_view.clear_annotations()
 
     def _update_annotation_count(self):
-        left_stats = self.left_view.get_annotation_stats()
-        right_stats = self.right_view.get_annotation_stats()
-
+        """Met à jour les compteurs d'annotations pour chaque image."""
         def fmt(stats: Dict[str, int]) -> str:
             parts = []
             for key in ("MATCH", "EXCLUSION", "MINUTIA", "CUSTOM"):
                 count = stats.get(key, 0)
                 if count:
                     parts.append(f"{count}{ANNOTATION_TYPES[key]['prefix']}")
-            return "/".join(parts) if parts else "0"
+            if not parts:
+                return ""
+            return "● " + "/".join(parts)
 
-        self.annotation_count_label.setText(f"Annotations : G={fmt(left_stats)} | D={fmt(right_stats)}")
+        # Compteur gauche
+        left_stats = self.left_view.get_annotation_stats()
+        self.left_count_label.setText(fmt(left_stats))
+
+        # Compteur droite
+        right_stats = self.right_view.get_annotation_stats()
+        self.right_count_label.setText(fmt(right_stats))
 
     def _on_annotation_type_changed(self):
         if not hasattr(self, "left_view") or self.left_view is None:
@@ -1212,6 +1653,11 @@ class ComparisonView(QWidget):
         if data:
             self.left_view.set_annotation_type(data)
             self.right_view.set_annotation_type(data)
+
+    def _on_numbering_toggled(self, checked: bool):
+        """Affiche/masque la numérotation des points."""
+        self.left_view.set_labels_visible(checked)
+        self.right_view.set_labels_visible(checked)
 
     def _on_measure_toggled(self, checked: bool):
         if checked:
@@ -1223,6 +1669,8 @@ class ComparisonView(QWidget):
             self.left_view.viewport().setCursor(Qt.CrossCursor)
             self.right_view.setCursor(Qt.CrossCursor)
             self.right_view.viewport().setCursor(Qt.CrossCursor)
+            # Verrouiller les contrôles d'annotation
+            self._set_annotation_controls_enabled(False)
         else:
             self.left_view.set_measurement_mode(False)
             self.right_view.set_measurement_mode(False)
@@ -1236,10 +1684,9 @@ class ComparisonView(QWidget):
     def _on_link_views_toggled(self, checked: bool):
         self.views_linked = checked
         if checked:
-            # Aligner les scrolls et le zoom tout de suite
-            self._sync_zoom(self.left_view, self.right_view)
-            self._sync_zoom(self.right_view, self.left_view)
-            self._sync_pans_initial()
+            self._capture_pan_offset()
+        else:
+            self._syncing_pan = False
 
     def _on_toggle_side_panel(self, checked: bool):
         """Affiche/masque le panneau latéral pour maximiser la zone image."""
@@ -1265,24 +1712,39 @@ class ComparisonView(QWidget):
             self._icon_cache[name] = icon
             action.setIcon(icon)
 
+    def _set_icon_toolbutton(self, button: QToolButton, name: str):
+        """Set icon on a QToolButton."""
+        path = self._icon_path(name)
+        if name in self._icon_cache:
+            button.setIcon(self._icon_cache[name])
+            return
+        if path.exists():
+            icon = QIcon(str(path))
+            self._icon_cache[name] = icon
+            button.setIcon(icon)
+
     def _on_zoom_changed(self, side: str, factor: float):
-        if not self.views_linked:
+        if not getattr(self, "views_linked", False):
             return
         source = self.left_view if side == "left" else self.right_view
         target = self.right_view if side == "left" else self.left_view
         self._sync_zoom(source, target)
+        # recalcule l'offset pan après un zoom commun pour garder le verrouillage courant
+        self._capture_pan_offset()
 
     def _on_pan_changed(self, side: str, horizontal: bool, value: int):
-        if not self.views_linked or self._syncing_pan:
+        if not getattr(self, "views_linked", False) or self._syncing_pan:
             return
         self._syncing_pan = True
         try:
             source = self.left_view if side == "left" else self.right_view
             target = self.right_view if side == "left" else self.left_view
             if horizontal:
-                target.horizontalScrollBar().setValue(value)
+                offset = self._pan_link_offset.get("h", 0)
+                target.horizontalScrollBar().setValue(value + (offset if side == "left" else -offset))
             else:
-                target.verticalScrollBar().setValue(value)
+                offset = self._pan_link_offset.get("v", 0)
+                target.verticalScrollBar().setValue(value + (offset if side == "left" else -offset))
         finally:
             self._syncing_pan = False
 
@@ -1299,18 +1761,26 @@ class ComparisonView(QWidget):
 
     def _sync_pans_initial(self):
         """Réaligne les scrollbars pour que les vues restent proches."""
-        self._syncing_pan = True
+        # remplacé par _capture_pan_offset pour ne pas casser la position utilisateur
+        pass
+
+    def _capture_pan_offset(self):
+        """Capture l'écart actuel entre scrollbars gauche/droite pour verrouiller la position."""
         try:
-            self.right_view.horizontalScrollBar().setValue(self.left_view.horizontalScrollBar().value())
-            self.right_view.verticalScrollBar().setValue(self.left_view.verticalScrollBar().value())
-        finally:
-            self._syncing_pan = False
+            lh = self.left_view.horizontalScrollBar().value()
+            rh = self.right_view.horizontalScrollBar().value()
+            lv = self.left_view.verticalScrollBar().value()
+            rv = self.right_view.verticalScrollBar().value()
+            self._pan_link_offset = {"h": rh - lh, "v": rv - lv}
+        except Exception:
+            self._pan_link_offset = {"h": 0, "v": 0}
 
     def _on_measurement_completed(self, side: str, x1: float, y1: float, x2: float, y2: float):
         pixels = math.hypot(x2 - x1, y2 - y1)
         text = self._measurement_text(side, pixels)
         view = self.left_view if side == "left" else self.right_view
         view.add_measurement((x1, y1), (x2, y2), text)
+        self._capture_pan_offset()
 
     def _measurement_text(self, side: str, pixels: float) -> str:
         dpi = self.image_state[side]["dpi"]
@@ -1322,18 +1792,6 @@ class ComparisonView(QWidget):
     def _clear_measurements(self):
         self.left_view.clear_measurements()
         self.right_view.clear_measurements()
-
-    def _on_enhancement_changed(self, side: str):
-        """Met à jour l'état d'amélioration et rerend l'image."""
-        ctrl = self.enhance_controls[side]
-        enh = {
-            "brightness": float(ctrl["brightness"].value()),
-            "contrast": float(ctrl["contrast"].value()) / 100.0,
-            "gamma": float(ctrl["gamma"].value()) / 100.0,
-            "invert": ctrl["invert"].isChecked(),
-        }
-        self.image_state[side]["enhancements"] = enh
-        self._render_image(side)
 
     def _scale_annotation_meta(self, side: str, ratio: float) -> List[Dict[str, object]]:
         view = self.left_view if side == "left" else self.right_view
@@ -1538,24 +1996,103 @@ class ComparisonView(QWidget):
         self.right_view.reset_zoom()
 
     def load_path(self, side: str, path: str):
-        pil_img = self._path_to_pil(path)
-        if not pil_img:
-            self._set_status(side, f"Impossible de charger : {path}")
-            return
+        state = self.image_state[side]
+        lower = path.lower()
 
-        # Stocker l'image PIL originale
-        self.image_state[side]["base_image"] = pil_img
-        self.image_state[side]["dpi"] = None
-        self.image_state[side]["rotation"] = 0
-        self.image_state[side]["enhancements"] = self._default_enhancements()
+        # Réinitialiser l'état NIST
+        state["nist_file"] = None
+        state["nist_images"] = []
+        state["nist_index"] = 0
+        state["file_path"] = path
+
+        # Réinitialiser la navigation NIST (désactivée par défaut)
+        self._populate_nist_nav(side)
+
+        # Charger selon le type de fichier
+        if lower.endswith((".nist", ".nst", ".eft", ".an2", ".int")):
+            self._load_nist_with_nav(side, path)
+        else:
+            pil_img = self._path_to_pil(path)
+            if not pil_img:
+                self._set_status(side, f"Impossible de charger : {path}")
+                return
+            self._load_single_image(side, pil_img, Path(path).name)
+
+    def _load_single_image(self, side: str, pil_img: Image.Image, filename: str):
+        """Charge une image simple (non-NIST)."""
+        state = self.image_state[side]
+        state["base_image"] = pil_img
+        state["original_image"] = pil_img.copy()
+        state["dpi"] = None
+        state["rotation"] = 0
+        state["enhancements"] = self._default_enhancements()
+
+        # Effacer annotations et mesures
+        view = self.left_view if side == "left" else self.right_view
+        view.clear_annotations()
+        view.clear_measurements()
 
         # Réinitialiser les sliders d'amélioration (déclenche rendu)
         self._reset_enhancements(side)
 
         # Mettre à jour le label
         label = self.left_label if side == "left" else self.right_label
-        label.setText(Path(path).name)
+        label.setText(filename)
         self._update_dpi_label(side)
+        self._update_annotation_count()
+
+    def _load_nist_with_nav(self, side: str, path: str):
+        """Charge un fichier NIST et peuple la navigation."""
+        state = self.image_state[side]
+        nist = NISTFile(path)
+        if not nist.parse():
+            self._set_status(side, f"Erreur parsing NIST : {path}")
+            return
+
+        state["nist_file"] = nist
+
+        # Collecter toutes les images avec leurs labels
+        nist_images = []
+        for rtype in (14, 4, 13, 15, 10, 7):
+            recs = nist.get_records_by_type(rtype)
+            for idc, rec in recs:
+                pil_img, _ = self._record_to_image(rec)
+                if pil_img:
+                    label = get_short_label_fr(rtype, rec, idc)
+                    nist_images.append((rtype, idc, rec, label))
+
+        if not nist_images:
+            self._set_status(side, f"Aucune image trouvée dans : {Path(path).name}")
+            return
+
+        state["nist_images"] = nist_images
+        state["nist_index"] = 0
+
+        # Charger la première image
+        record_type, idc, record, label = nist_images[0]
+        pil_img, _ = self._record_to_image(record)
+        if pil_img:
+            state["base_image"] = pil_img
+            state["original_image"] = pil_img.copy()
+            state["dpi"] = None
+            state["rotation"] = 0
+            state["enhancements"] = self._default_enhancements()
+
+            # Effacer annotations et mesures
+            view = self.left_view if side == "left" else self.right_view
+            view.clear_annotations()
+            view.clear_measurements()
+
+            self._reset_enhancements(side)
+
+        # Mettre à jour le label avec le nom du fichier
+        lbl = self.left_label if side == "left" else self.right_label
+        lbl.setText(Path(path).name)
+
+        # Peupler et afficher la navigation NIST
+        self._populate_nist_nav(side)
+        self._update_dpi_label(side)
+        self._update_annotation_count()
 
     def _set_status(self, side: str, text: str):
         if side == "left":
@@ -1630,5 +2167,6 @@ class ComparisonView(QWidget):
     def _pil_to_pixmap(self, img: Image.Image) -> QPixmap:
         img = img.convert("RGB")
         data = img.tobytes("raw", "RGB")
-        qimg = QImage(data, img.width, img.height, QImage.Format_RGB888)
+        bytes_per_line = img.width * 3
+        qimg = QImage(data, img.width, img.height, bytes_per_line, QImage.Format_RGB888).copy()
         return QPixmap.fromImage(qimg)

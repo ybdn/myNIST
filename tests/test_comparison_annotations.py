@@ -69,9 +69,11 @@ class TestComparisonView:
     def test_state_initialisation(self, qapp):
         view = ComparisonView()
         assert view.image_state["left"]["base_image"] is None
+        assert view.image_state["left"]["original_image"] is None
         assert view.image_state["left"]["dpi"] is None
         assert view.image_state["left"]["rotation"] == 0
         assert view.image_state["right"]["base_image"] is None
+        assert view.image_state["right"]["original_image"] is None
         assert view.views_linked is False
 
     def test_rotation_transforms_annotations(self, qapp):
@@ -89,12 +91,12 @@ class TestComparisonView:
         view = ComparisonView()
         img = Image.new("RGB", (10, 10), color="gray")
         view.image_state["left"]["base_image"] = img
-        ctrl = view.enhance_controls["left"]
-        ctrl["brightness"].setValue(50)
-        ctrl["contrast"].setValue(150)
-        ctrl["gamma"].setValue(80)
-        ctrl["invert"].setChecked(True)
-        view._on_enhancement_changed("left")
+        # Utilise les contrôles unifiés (côté gauche actif par défaut)
+        view.unified_brightness.setValue(50)
+        view.unified_contrast.setValue(150)
+        view.unified_gamma.setValue(80)
+        view.unified_invert.setChecked(True)
+        view._on_unified_enhancement_changed()
         enh = view.image_state["left"]["enhancements"]
         assert enh["brightness"] == 50.0
         assert enh["contrast"] == 1.5
