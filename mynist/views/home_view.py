@@ -4,8 +4,7 @@ from pathlib import Path
 from typing import Optional, Dict
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QColor, QPalette, QIcon, QPixmap, QPainter, QFont
-from PyQt5.QtSvg import QSvgRenderer
+from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -13,12 +12,12 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QGridLayout,
-    QGraphicsDropShadowEffect,
 )
 
 from mynist.utils.constants import APP_NAME, APP_VERSION
 from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius, Dimensions
+    Colors, Typography, Spacing, Radius,
+    Theme, detect_dark_mode, load_colored_icon
 )
 
 
@@ -37,113 +36,69 @@ class HomeView(QWidget):
         self.current_mode: str = "viewer"
         self._icon_cache: Dict[str, QIcon] = {}
         self.setObjectName("HomeRoot")
-        self._apply_theme()
+        self._setup_theme()
         self._build_ui()
 
     def _get_icon_path(self, name: str) -> Path:
         """Return path to hub icon."""
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
+    def _setup_theme(self):
+        """Setup theme and apply stylesheet."""
+        self._is_dark = detect_dark_mode(self)
+        self._theme = Theme(self._is_dark)
+        self._apply_stylesheet()
+
     def _load_icon(self, name: str, size: int = 48) -> QIcon:
-        """Load SVG icon."""
-        if name in self._icon_cache:
-            return self._icon_cache[name]
+        """Load SVG icon with theme-appropriate color."""
+        cache_key = f"{name}_{size}_{self._is_dark}"
+        if cache_key in self._icon_cache:
+            return self._icon_cache[cache_key]
 
         path = self._get_icon_path(name)
-        if not path.exists():
-            return QIcon()
-
-        renderer = QSvgRenderer(str(path))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
-
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-
-        icon = QIcon(pixmap)
-        self._icon_cache[name] = icon
+        icon = load_colored_icon(path, self._theme.icon, size)
+        self._icon_cache[cache_key] = icon
         return icon
 
-    def _is_dark_mode(self) -> bool:
-        """Detect if system is in dark mode."""
-        palette = self.palette()
-        window = palette.color(QPalette.Window)
-        return window.value() < 128
-
-    def _apply_theme(self):
-        """Apply NIST Studio design system theme."""
-        is_dark = self._is_dark_mode()
-
-        # Select colors based on theme
-        if is_dark:
-            window_bg = Colors.BG_DARK
-            surface_bg = Colors.SURFACE_DARK
-            text_primary = Colors.TEXT_PRIMARY_DARK
-            text_secondary = Colors.TEXT_SECONDARY
-            border = Colors.BORDER_DARK
-            card_hover_bg = "#353D47"
-        else:
-            window_bg = Colors.BG_LIGHT
-            surface_bg = Colors.SURFACE_LIGHT
-            text_primary = Colors.TEXT_PRIMARY_LIGHT
-            text_secondary = Colors.TEXT_SECONDARY
-            border = Colors.BORDER_SUBTLE
-            card_hover_bg = "#EEF1F5"
+    def _apply_stylesheet(self):
+        """Apply theme stylesheet."""
+        t = self._theme
 
         self.setStyleSheet(f"""
             #HomeRoot {{
-                background-color: {window_bg};
+                background-color: {t.bg};
+            }}
+
+            #HomeRoot QLabel {{
+                color: {t.text};
             }}
 
             #titleLabel {{
-                font-size: {Typography.SIZE_TITLE}px;
-                font-weight: {Typography.WEIGHT_SEMIBOLD};
-                color: {Colors.PRIMARY if not is_dark else Colors.TEXT_PRIMARY_DARK};
+                font-size: {Typography.SIZE_3XL}px;
+                font-weight: {Typography.WEIGHT_BOLD};
+                color: {t.text};
             }}
 
             #subtitleLabel {{
-                font-size: {Typography.SIZE_NORMAL}px;
-                color: {text_secondary};
+                font-size: {Typography.SIZE_MD}px;
+                color: {t.text_secondary};
             }}
 
             #currentFileLabel {{
-                font-size: {Typography.SIZE_SMALL}px;
+                font-size: {Typography.SIZE_SM}px;
                 padding: {Spacing.SM}px {Spacing.LG}px;
-                background: {surface_bg};
-                border: 1px solid {border};
+                background: {t.surface};
+                border: 1px solid {t.border};
                 border-radius: {Radius.MD}px;
-                color: {text_primary};
+                color: {t.text};
             }}
 
-            QPushButton#modeCard {{
-                text-align: center;
-                padding: {Spacing.CARD_PADDING}px;
-                border: 1px solid {border};
-                border-radius: {Radius.XL}px;
-                background: {surface_bg};
-                color: {text_primary};
-                font-size: {Typography.SIZE_NORMAL}px;
-            }}
-
-            QPushButton#modeCard:hover {{
-                border: 2px solid {Colors.ACCENT};
-                background: {card_hover_bg};
-            }}
-
-            QPushButton#modeCard:disabled {{
-                background: {"#2A2E35" if is_dark else "#E8EAED"};
-                color: {text_secondary};
-                border-color: {border};
-            }}
+            {t.get_card_style()}
         """)
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(
-            Spacing.XXXL, Spacing.XXXL,
-            Spacing.XXXL, Spacing.XXXL
-        )
+        layout.setContentsMargins(Spacing.XXXXL, Spacing.XXXL, Spacing.XXXXL, Spacing.XXXL)
         layout.setSpacing(Spacing.XXL)
 
         # Vertical centering
@@ -259,14 +214,14 @@ class HomeView(QWidget):
         button = QPushButton()
         button.setObjectName("modeCard")
         button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button.setFixedHeight(Dimensions.CARD_HEIGHT)
-        button.setMinimumWidth(Dimensions.CARD_MIN_WIDTH)
+        button.setFixedHeight(140)
+        button.setMinimumWidth(280)
         button.setEnabled(enabled)
         button.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
 
-        icon = self._load_icon(icon_name, Dimensions.CARD_HEIGHT // 3)
+        icon = self._load_icon(icon_name, 48)
         button.setIcon(icon)
-        button.setIconSize(QSize(Dimensions.CARD_HEIGHT // 3, Dimensions.CARD_HEIGHT // 3))
+        button.setIconSize(QSize(48, 48))
 
         if not enabled:
             text = f"{title}\n\n{subtitle}\n\n(Bientot disponible)"
@@ -278,10 +233,6 @@ class HomeView(QWidget):
             button.clicked.connect(lambda: self.mode_requested.emit(mode))
 
         return button
-
-    def _emit_resume(self):
-        if self.current_file:
-            self.resume_requested.emit()
 
     def set_current_file(self, path: Optional[str], mode: str = "viewer"):
         """Update banner and resume state."""

@@ -41,7 +41,8 @@ from mynist.utils.constants import (
 from mynist.utils.logger import get_logger
 from mynist.utils.recent_files import RecentFiles
 from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius, Dimensions
+    Colors, Typography, Spacing, Radius,
+    Theme, detect_dark_mode, load_colored_icon
 )
 
 logger = get_logger(__name__)
@@ -123,43 +124,32 @@ class MainWindow(QMainWindow):
         container.setObjectName("ViewerRoot")
 
         # Apply NIST Studio Design System
-        palette = self.palette()
-        window = palette.color(QPalette.Window)
-        is_dark = window.value() < 128
-
-        if is_dark:
-            window_bg = Colors.BG_DARK
-            header_bg = Colors.SURFACE_DARK
-            text_color = Colors.TEXT_PRIMARY_DARK
-            border_color = Colors.BORDER_DARK
-        else:
-            window_bg = Colors.BG_LIGHT
-            header_bg = Colors.SURFACE_LIGHT
-            text_color = Colors.TEXT_PRIMARY_LIGHT
-            border_color = Colors.BORDER_SUBTLE
+        is_dark = detect_dark_mode(self)
+        self._viewer_is_dark = is_dark
+        t = Theme(is_dark)
 
         container.setStyleSheet(f"""
             #ViewerRoot {{
-                background-color: {window_bg};
+                background-color: {t.bg};
             }}
             #viewerHeader {{
-                background: {header_bg};
-                border-bottom: 1px solid {border_color};
+                background: {t.surface};
+                border-bottom: 1px solid {t.border};
             }}
             #viewerHeader QLabel {{
-                color: {text_color};
+                color: {t.text};
             }}
             #viewerTitleLabel {{
-                font-size: {Typography.SIZE_MEDIUM}px;
+                font-size: {Typography.SIZE_LG}px;
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
-                color: {Colors.PRIMARY if not is_dark else text_color};
+                color: {t.text};
             }}
             #viewerFileLabel {{
-                font-size: {Typography.SIZE_SMALL}px;
-                color: {Colors.TEXT_SECONDARY};
+                font-size: {Typography.SIZE_SM}px;
+                color: {t.text_secondary};
             }}
             #hubButton {{
-                background: {Colors.ACCENT};
+                background: {t.accent};
                 color: white;
                 border: none;
                 border-radius: {Radius.MD}px;
@@ -167,7 +157,7 @@ class MainWindow(QMainWindow):
                 font-weight: {Typography.WEIGHT_MEDIUM};
             }}
             #hubButton:hover {{
-                background: {Colors.HOVER_ACCENT};
+                background: {t.accent_hover};
             }}
         """)
 
@@ -179,10 +169,7 @@ class MainWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("viewerHeader")
         header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(
-            Spacing.HEADER_PADDING_H, Spacing.HEADER_PADDING_V,
-            Spacing.HEADER_PADDING_H, Spacing.HEADER_PADDING_V
-        )
+        header_layout.setContentsMargins(Spacing.LG, Spacing.SM, Spacing.LG, Spacing.SM)
 
         # Hub button
         hub_btn = QPushButton("Retour au Hub")
@@ -232,21 +219,24 @@ class MainWindow(QMainWindow):
 
         return container
 
-    def _load_hub_icon(self, name: str, size: int = 24) -> QIcon:
-        """Load SVG icon from hub folder."""
+    def _load_hub_icon(self, name: str, size: int = 24, on_accent: bool = True) -> QIcon:
+        """Load SVG icon from hub folder with appropriate color.
+
+        Args:
+            name: Icon name (without .svg extension)
+            size: Icon size in pixels
+            on_accent: True if icon is on accent-colored button (white icon)
+        """
         path = Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
-        if not path.exists():
-            return QIcon()
+        is_dark = getattr(self, '_viewer_is_dark', detect_dark_mode(self))
 
-        renderer = QSvgRenderer(str(path))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
+        # Icons on accent buttons are always white
+        if on_accent:
+            color = Colors.ICON_ON_ACCENT
+        else:
+            color = Colors.DARK_ICON if is_dark else Colors.LIGHT_ICON
 
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-
-        return QIcon(pixmap)
+        return load_colored_icon(path, color, size)
 
     def create_menus(self):
         """Create application menus."""

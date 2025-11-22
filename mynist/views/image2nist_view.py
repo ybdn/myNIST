@@ -3,8 +3,6 @@
 from pathlib import Path
 
 from PyQt5.QtCore import Qt, pyqtSignal
-from PyQt5.QtGui import QPalette, QIcon, QPixmap, QPainter
-from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -15,7 +13,8 @@ from PyQt5.QtWidgets import (
 )
 
 from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius
+    Colors, Typography, Spacing, Radius,
+    Theme, detect_dark_mode, load_colored_icon
 )
 
 
@@ -27,72 +26,51 @@ class Image2NISTView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("Image2NISTRoot")
-        self._apply_theme()
+        self._setup_theme()
         self._build_ui()
 
     def _get_icon_path(self, name: str) -> Path:
         """Return path to hub icon."""
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
-    def _load_icon(self, name: str, size: int = 64) -> QIcon:
-        """Load SVG icon."""
+    def _setup_theme(self):
+        """Setup theme and apply stylesheet."""
+        self._is_dark = detect_dark_mode(self)
+        self._theme = Theme(self._is_dark)
+        self._apply_stylesheet()
+
+    def _load_icon(self, name: str, size: int = 64, on_accent: bool = False):
+        """Load colored icon."""
         path = self._get_icon_path(name)
-        if not path.exists():
-            return QIcon()
+        color = Colors.ICON_ON_ACCENT if on_accent else self._theme.icon
+        return load_colored_icon(path, color, size)
 
-        renderer = QSvgRenderer(str(path))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
-
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-
-        return QIcon(pixmap)
-
-    def _is_dark_mode(self) -> bool:
-        """Detect if system is in dark mode."""
-        palette = self.palette()
-        window = palette.color(QPalette.Window)
-        return window.value() < 128
-
-    def _apply_theme(self):
-        """Apply NIST Studio Design System theme."""
-        is_dark = self._is_dark_mode()
-
-        if is_dark:
-            window_bg = Colors.BG_DARK
-            surface_bg = Colors.SURFACE_DARK
-            text_primary = Colors.TEXT_PRIMARY_DARK
-            border = Colors.BORDER_DARK
-        else:
-            window_bg = Colors.BG_LIGHT
-            surface_bg = Colors.SURFACE_LIGHT
-            text_primary = Colors.TEXT_PRIMARY_LIGHT
-            border = Colors.BORDER_SUBTLE
+    def _apply_stylesheet(self):
+        """Apply theme stylesheet."""
+        t = self._theme
 
         self.setStyleSheet(f"""
             #Image2NISTRoot {{
-                background-color: {window_bg};
+                background-color: {t.bg};
             }}
 
             #Image2NISTRoot QLabel {{
-                color: {text_primary};
+                color: {t.text};
             }}
 
             #titleLabel {{
-                font-size: {Typography.SIZE_LARGE}px;
+                font-size: {Typography.SIZE_XL}px;
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
-                color: {Colors.PRIMARY if not is_dark else text_primary};
+                color: {t.text};
             }}
 
             #subtitleLabel {{
-                font-size: {Typography.SIZE_NORMAL}px;
-                color: {Colors.TEXT_SECONDARY};
+                font-size: {Typography.SIZE_MD}px;
+                color: {t.text_secondary};
             }}
 
             #hubButton {{
-                background: {Colors.ACCENT};
+                background: {t.accent};
                 color: white;
                 border: none;
                 border-radius: {Radius.MD}px;
@@ -101,28 +79,24 @@ class Image2NISTView(QWidget):
             }}
 
             #hubButton:hover {{
-                background: {Colors.HOVER_ACCENT};
+                background: {t.accent_hover};
             }}
 
             QFrame#placeholderFrame {{
-                background: {surface_bg};
-                border: 2px dashed {border};
+                background: {t.surface};
+                border: 2px dashed {t.border};
                 border-radius: {Radius.XL}px;
             }}
 
             #comingSoonLabel {{
                 font-style: italic;
-                color: {Colors.TEXT_SECONDARY};
-                margin-top: {Spacing.LG}px;
+                color: {t.text_secondary};
             }}
         """)
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(
-            Spacing.XXXL, Spacing.XXL,
-            Spacing.XXXL, Spacing.XXL
-        )
+        layout.setContentsMargins(Spacing.XXXL, Spacing.XXL, Spacing.XXXL, Spacing.XXL)
         layout.setSpacing(Spacing.XL)
 
         # Header with back button
@@ -133,7 +107,7 @@ class Image2NISTView(QWidget):
         back_btn.setObjectName("hubButton")
         back_btn.setCursor(Qt.PointingHandCursor)
         back_btn.clicked.connect(self.back_requested.emit)
-        back_icon = self._load_icon("home", 20)
+        back_icon = self._load_icon("home", 20, on_accent=True)
         if not back_icon.isNull():
             back_btn.setIcon(back_icon)
         header.addWidget(back_btn)
@@ -160,16 +134,13 @@ class Image2NISTView(QWidget):
         frame.setFixedSize(500, 320)
 
         frame_layout = QVBoxLayout()
-        frame_layout.setContentsMargins(
-            Spacing.XXXL, Spacing.XXXL,
-            Spacing.XXXL, Spacing.XXXL
-        )
+        frame_layout.setContentsMargins(Spacing.XXXL, Spacing.XXXL, Spacing.XXXL, Spacing.XXXL)
         frame_layout.setSpacing(Spacing.LG)
         frame_layout.setAlignment(Qt.AlignCenter)
 
         # Icon
         icon_label = QLabel()
-        icon = self._load_icon("image2nist", 64)
+        icon = self._load_icon("image2nist", 64, on_accent=False)
         if not icon.isNull():
             icon_label.setPixmap(icon.pixmap(64, 64))
         icon_label.setAlignment(Qt.AlignCenter)

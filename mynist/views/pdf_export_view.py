@@ -4,8 +4,6 @@ from pathlib import Path
 from typing import Optional
 
 from PyQt5.QtCore import pyqtSignal, Qt
-from PyQt5.QtGui import QPalette, QIcon, QPixmap, QPainter
-from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -17,7 +15,8 @@ from PyQt5.QtWidgets import (
 )
 
 from mynist.utils.design_tokens import (
-    Colors, Typography, Spacing, Radius
+    Colors, Typography, Spacing, Radius,
+    Theme, detect_dark_mode, load_colored_icon
 )
 
 
@@ -32,89 +31,71 @@ class PdfExportView(QWidget):
         super().__init__(parent)
         self.current_file: Optional[str] = None
         self.setObjectName("PdfExportRoot")
-        self._apply_theme()
+        self._setup_theme()
         self._build_ui()
 
     def _get_icon_path(self, name: str) -> Path:
         """Return path to hub icon."""
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
-    def _load_icon(self, name: str, size: int = 24) -> QIcon:
-        """Load SVG icon."""
+    def _setup_theme(self):
+        """Setup theme and apply stylesheet."""
+        self._is_dark = detect_dark_mode(self)
+        self._theme = Theme(self._is_dark)
+        self._apply_stylesheet()
+
+    def _load_icon(self, name: str, size: int = 24, on_accent: bool = True):
+        """Load colored icon."""
         path = self._get_icon_path(name)
-        if not path.exists():
-            return QIcon()
+        color = Colors.ICON_ON_ACCENT if on_accent else self._theme.icon
+        return load_colored_icon(path, color, size)
 
-        renderer = QSvgRenderer(str(path))
-        pixmap = QPixmap(size, size)
-        pixmap.fill(Qt.transparent)
-
-        painter = QPainter(pixmap)
-        renderer.render(painter)
-        painter.end()
-
-        return QIcon(pixmap)
-
-    def _is_dark_mode(self) -> bool:
-        """Detect if system is in dark mode."""
-        palette = self.palette()
-        window = palette.color(QPalette.Window)
-        return window.value() < 128
-
-    def _apply_theme(self):
-        """Apply NIST Studio Design System theme."""
-        is_dark = self._is_dark_mode()
-
-        if is_dark:
-            window_bg = Colors.BG_DARK
-            surface_bg = Colors.SURFACE_DARK
-            text_primary = Colors.TEXT_PRIMARY_DARK
-            border = Colors.BORDER_DARK
-        else:
-            window_bg = Colors.BG_LIGHT
-            surface_bg = Colors.SURFACE_LIGHT
-            text_primary = Colors.TEXT_PRIMARY_LIGHT
-            border = Colors.BORDER_SUBTLE
+    def _apply_stylesheet(self):
+        """Apply theme stylesheet."""
+        t = self._theme
 
         self.setStyleSheet(f"""
             #PdfExportRoot {{
-                background-color: {window_bg};
+                background-color: {t.bg};
             }}
 
             #PdfExportRoot QLabel {{
-                color: {text_primary};
+                color: {t.text};
             }}
 
             #titleLabel {{
-                font-size: {Typography.SIZE_LARGE}px;
+                font-size: {Typography.SIZE_XL}px;
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
-                color: {Colors.PRIMARY if not is_dark else text_primary};
+                color: {t.text};
             }}
 
             #subtitleLabel {{
-                font-size: {Typography.SIZE_SMALL}px;
-                color: {Colors.TEXT_SECONDARY};
+                font-size: {Typography.SIZE_SM}px;
+                color: {t.text_secondary};
             }}
 
             QGroupBox {{
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
-                border: 1px solid {border};
+                font-size: {Typography.SIZE_MD}px;
+                border: 1px solid {t.border};
                 border-radius: {Radius.LG}px;
-                margin-top: 12px;
+                margin-top: 14px;
                 padding: {Spacing.LG}px;
-                background: {surface_bg};
+                background: {t.surface};
+                color: {t.text};
             }}
 
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
-                padding: 4px 12px;
-                background: {window_bg};
+                padding: 2px 10px;
+                background: {t.bg};
                 border-radius: {Radius.SM}px;
+                color: {t.text};
             }}
 
             #hubButton {{
-                background: {Colors.ACCENT};
+                background: {t.accent};
                 color: white;
                 border: none;
                 border-radius: {Radius.MD}px;
@@ -123,47 +104,57 @@ class PdfExportView(QWidget):
             }}
 
             #hubButton:hover {{
-                background: {Colors.HOVER_ACCENT};
+                background: {t.accent_hover};
             }}
 
             #exportBtn {{
-                background: {Colors.ACCENT};
+                background: {t.accent};
                 color: white;
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
-                font-size: {Typography.SIZE_NORMAL}px;
+                font-size: {Typography.SIZE_MD}px;
                 padding: {Spacing.MD}px {Spacing.XXXL}px;
                 border-radius: {Radius.LG}px;
                 border: none;
             }}
 
             #exportBtn:hover {{
-                background: {Colors.HOVER_ACCENT};
+                background: {t.accent_hover};
             }}
 
             #exportBtn:disabled {{
                 background: {Colors.DISABLED};
-                color: {Colors.TEXT_SECONDARY};
+                color: {t.text_secondary};
             }}
 
             QLineEdit {{
                 padding: {Spacing.SM}px {Spacing.MD}px;
-                border: 1px solid {border};
+                border: 1px solid {t.border};
                 border-radius: {Radius.MD}px;
-                background: {surface_bg};
-                color: {text_primary};
+                background: {t.surface};
+                color: {t.text};
+                font-size: {Typography.SIZE_MD}px;
             }}
 
             QLineEdit:focus {{
-                border-color: {Colors.ACCENT};
+                border-color: {t.accent};
+            }}
+
+            QPushButton {{
+                padding: {Spacing.SM}px {Spacing.MD}px;
+                border: 1px solid {t.border};
+                border-radius: {Radius.MD}px;
+                background: {t.surface};
+                color: {t.text};
+            }}
+
+            QPushButton:hover {{
+                background: {t.border};
             }}
         """)
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(
-            Spacing.XXXL, Spacing.XXL,
-            Spacing.XXXL, Spacing.XXL
-        )
+        layout.setContentsMargins(Spacing.XXXL, Spacing.XXL, Spacing.XXXL, Spacing.XXL)
         layout.setSpacing(Spacing.XL)
 
         # Header with back button and title
@@ -194,7 +185,7 @@ class PdfExportView(QWidget):
         self.export_btn.setCursor(Qt.PointingHandCursor)
         self.export_btn.setMinimumWidth(200)
         self.export_btn.clicked.connect(self._on_export_clicked)
-        export_icon = self._load_icon("pdf", 20)
+        export_icon = self._load_icon("pdf", 20, on_accent=True)
         if not export_icon.isNull():
             self.export_btn.setIcon(export_icon)
         export_row.addWidget(self.export_btn)
@@ -229,7 +220,7 @@ class PdfExportView(QWidget):
         back_btn.setObjectName("hubButton")
         back_btn.setCursor(Qt.PointingHandCursor)
         back_btn.clicked.connect(self.back_requested.emit)
-        back_icon = self._load_icon("home", 20)
+        back_icon = self._load_icon("home", 20, on_accent=True)
         if not back_icon.isNull():
             back_btn.setIcon(back_icon)
         header.addWidget(back_btn)
@@ -257,7 +248,7 @@ class PdfExportView(QWidget):
         layout.setContentsMargins(Spacing.LG, Spacing.XL, Spacing.LG, Spacing.LG)
 
         self.source_label = QLabel("Aucun fichier NIST charge")
-        self.source_label.setStyleSheet(f"font-size: {Typography.SIZE_NORMAL}px;")
+        self.source_label.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
         layout.addWidget(self.source_label)
 
         group.setLayout(layout)

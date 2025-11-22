@@ -3,6 +3,12 @@
 Tech Modern Clean style - Professional biometric analysis application.
 """
 
+from pathlib import Path
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QIcon, QPixmap, QPainter, QColor
+from PyQt5.QtSvg import QSvgRenderer
+
+
 # =============================================================================
 # COLOR PALETTE
 # =============================================================================
@@ -13,84 +19,53 @@ class Colors:
     # Primary colors
     PRIMARY = "#0D1B2A"          # Bleu nuit - Brand identity
     ACCENT = "#3AAFA9"           # Cyan tech - Interactive elements
-    ACCENT_SECONDARY = "#4FC3F7" # Bleu clair - Highlights
+    ACCENT_HOVER = "#2D9A94"     # Cyan hover (plus fonce)
+    ACCENT_LIGHT = "#5BC0BC"     # Cyan clair
 
-    # Backgrounds
-    BG_LIGHT = "#F5F7FA"         # Gris froid - Light mode background
-    BG_DARK = "#1A1F25"          # Anthracite - Dark mode background
+    # Light theme
+    LIGHT_BG = "#F5F7FA"         # Background principal
+    LIGHT_SURFACE = "#FFFFFF"    # Surfaces (cards, panels)
+    LIGHT_TEXT = "#1A1A2E"       # Texte principal (contraste fort)
+    LIGHT_TEXT_SECONDARY = "#64748B"  # Texte secondaire
+    LIGHT_BORDER = "#E2E8F0"     # Bordures subtiles
+    LIGHT_ICON = "#334155"       # Couleur icones
 
-    # Surfaces (panels, cards)
-    SURFACE_LIGHT = "#FFFFFF"
-    SURFACE_DARK = "#2A3038"
-
-    # Text
-    TEXT_PRIMARY_LIGHT = "#0D1B2A"
-    TEXT_PRIMARY_DARK = "#FFFFFF"
-    TEXT_SECONDARY = "#5C6975"
-
-    # Borders
-    BORDER_SUBTLE = "#D0D7DF"
-    BORDER_DARK = "#3A424D"
+    # Dark theme
+    DARK_BG = "#0F172A"          # Background principal
+    DARK_SURFACE = "#1E293B"     # Surfaces (cards, panels)
+    DARK_TEXT = "#F1F5F9"        # Texte principal
+    DARK_TEXT_SECONDARY = "#94A3B8"  # Texte secondaire
+    DARK_BORDER = "#334155"      # Bordures
+    DARK_ICON = "#E2E8F0"        # Couleur icones (clair)
 
     # States
-    HOVER_ACCENT = "#45C4BE"     # Accent +10%
-    DISABLED = "#8A9199"
-    ERROR = "#E53935"
-    SUCCESS = "#43A047"
-    WARNING = "#FB8C00"
+    DISABLED = "#94A3B8"
+    ERROR = "#EF4444"
+    SUCCESS = "#22C55E"
+    WARNING = "#F59E0B"
 
+    # Special
+    ICON_ON_ACCENT = "#FFFFFF"   # Icones sur fond accent
 
-class ColorsLight:
-    """Light theme colors."""
-    WINDOW = Colors.BG_LIGHT
-    BASE = Colors.SURFACE_LIGHT
-    TEXT = Colors.TEXT_PRIMARY_LIGHT
-    TEXT_SECONDARY = Colors.TEXT_SECONDARY
-    BORDER = Colors.BORDER_SUBTLE
-    ACCENT = Colors.ACCENT
-    SURFACE = Colors.SURFACE_LIGHT
-
-
-class ColorsDark:
-    """Dark theme colors."""
-    WINDOW = Colors.BG_DARK
-    BASE = Colors.SURFACE_DARK
-    TEXT = Colors.TEXT_PRIMARY_DARK
-    TEXT_SECONDARY = Colors.TEXT_SECONDARY
-    BORDER = Colors.BORDER_DARK
-    ACCENT = Colors.ACCENT
-    SURFACE = Colors.SURFACE_DARK
-
-
-# =============================================================================
-# TYPOGRAPHY
-# =============================================================================
 
 class Typography:
     """Font sizes and weights."""
 
-    # Font family (fallbacks for system availability)
-    FONT_FAMILY = "Inter, Source Sans Pro, Segoe UI, sans-serif"
-
     # Sizes in points
-    SIZE_SMALL = 12
-    SIZE_NORMAL = 14
-    SIZE_MEDIUM = 16
-    SIZE_LARGE = 20
-    SIZE_XLARGE = 24
-    SIZE_TITLE = 28
+    SIZE_XS = 11
+    SIZE_SM = 12
+    SIZE_MD = 14
+    SIZE_LG = 16
+    SIZE_XL = 20
+    SIZE_2XL = 24
+    SIZE_3XL = 28
 
     # Weights
-    WEIGHT_LIGHT = 300
-    WEIGHT_REGULAR = 400
+    WEIGHT_NORMAL = 400
     WEIGHT_MEDIUM = 500
     WEIGHT_SEMIBOLD = 600
     WEIGHT_BOLD = 700
 
-
-# =============================================================================
-# SPACING
-# =============================================================================
 
 class Spacing:
     """Spacing values in pixels."""
@@ -102,165 +77,155 @@ class Spacing:
     XL = 20
     XXL = 24
     XXXL = 32
+    XXXXL = 48
 
-    # Component-specific
-    CARD_PADDING = 20
-    PANEL_PADDING = 16
-    HEADER_PADDING_H = 16
-    HEADER_PADDING_V = 8
-
-
-# =============================================================================
-# BORDER RADIUS
-# =============================================================================
 
 class Radius:
     """Border radius values in pixels."""
 
-    NONE = 0
     SM = 4
     MD = 6
-    LG = 10
+    LG = 8
     XL = 12
-    ROUND = 9999
 
 
 # =============================================================================
-# SHADOWS (minimal for flat UI)
+# ICON UTILITIES
 # =============================================================================
 
-class Shadows:
-    """Box shadows - subtle for flat design."""
+def load_colored_icon(svg_path: Path, color: str, size: int = 24) -> QIcon:
+    """Load an SVG icon and colorize it.
 
-    NONE = "none"
-    SUBTLE = "0 1px 3px rgba(0, 0, 0, 0.08)"
-    CARD = "0 2px 8px rgba(0, 0, 0, 0.06)"
-    ELEVATED = "0 4px 12px rgba(0, 0, 0, 0.1)"
+    Args:
+        svg_path: Path to the SVG file
+        color: Hex color to apply (e.g., "#FFFFFF")
+        size: Icon size in pixels
+
+    Returns:
+        QIcon with the colorized icon
+    """
+    if not svg_path.exists():
+        return QIcon()
+
+    # Read SVG content and replace currentColor
+    with open(svg_path, 'r') as f:
+        svg_content = f.read()
+
+    # Replace currentColor and any stroke/fill with our color
+    svg_content = svg_content.replace('currentColor', color)
+    svg_content = svg_content.replace('stroke="#000000"', f'stroke="{color}"')
+    svg_content = svg_content.replace('stroke="#000"', f'stroke="{color}"')
+    svg_content = svg_content.replace("stroke='#000000'", f"stroke='{color}'")
+    svg_content = svg_content.replace("stroke='#000'", f"stroke='{color}'")
+
+    # Render with QSvgRenderer
+    renderer = QSvgRenderer(svg_content.encode())
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.transparent)
+
+    painter = QPainter(pixmap)
+    renderer.render(painter)
+    painter.end()
+
+    return QIcon(pixmap)
+
+
+def get_icon_color(is_dark: bool, on_accent: bool = False) -> str:
+    """Get the appropriate icon color based on theme.
+
+    Args:
+        is_dark: True if dark theme
+        on_accent: True if icon is on accent-colored background
+
+    Returns:
+        Hex color string
+    """
+    if on_accent:
+        return Colors.ICON_ON_ACCENT
+    return Colors.DARK_ICON if is_dark else Colors.LIGHT_ICON
 
 
 # =============================================================================
-# ICON CONFIGURATION
+# THEME UTILITIES
 # =============================================================================
 
-class Icons:
-    """Icon configuration - Tabler Icons style."""
+class Theme:
+    """Theme helper class."""
 
-    STROKE_WIDTH = 1.5  # px
-    SIZE_SM = 16
-    SIZE_MD = 20
-    SIZE_LG = 24
-    SIZE_XL = 32
-    SIZE_CARD = 48
+    def __init__(self, is_dark: bool):
+        self.is_dark = is_dark
 
+        if is_dark:
+            self.bg = Colors.DARK_BG
+            self.surface = Colors.DARK_SURFACE
+            self.text = Colors.DARK_TEXT
+            self.text_secondary = Colors.DARK_TEXT_SECONDARY
+            self.border = Colors.DARK_BORDER
+            self.icon = Colors.DARK_ICON
+        else:
+            self.bg = Colors.LIGHT_BG
+            self.surface = Colors.LIGHT_SURFACE
+            self.text = Colors.LIGHT_TEXT
+            self.text_secondary = Colors.LIGHT_TEXT_SECONDARY
+            self.border = Colors.LIGHT_BORDER
+            self.icon = Colors.LIGHT_ICON
 
-# =============================================================================
-# COMPONENT DIMENSIONS
-# =============================================================================
+        # Common colors
+        self.accent = Colors.ACCENT
+        self.accent_hover = Colors.ACCENT_HOVER
+        self.primary = Colors.PRIMARY
 
-class Dimensions:
-    """Standard component dimensions."""
-
-    # Cards
-    CARD_HEIGHT = 140
-    CARD_MIN_WIDTH = 280
-    CARD_MAX_WIDTH = 400
-
-    # Buttons
-    BUTTON_HEIGHT = 36
-    BUTTON_HEIGHT_SM = 28
-    BUTTON_HEIGHT_LG = 44
-
-    # Panels
-    PANEL_ADJUSTMENTS_WIDTH = 850
-
-    # Header
-    HEADER_HEIGHT = 48
-
-
-# =============================================================================
-# QSS HELPER FUNCTIONS
-# =============================================================================
-
-def get_button_style(
-    bg_color: str = Colors.ACCENT,
-    text_color: str = "#FFFFFF",
-    hover_color: str = Colors.HOVER_ACCENT,
-    radius: int = Radius.MD
-) -> str:
-    """Generate QPushButton stylesheet."""
-    return f"""
-        QPushButton {{
-            background-color: {bg_color};
-            color: {text_color};
+    def get_hub_button_style(self) -> str:
+        """Get stylesheet for hub/accent buttons."""
+        return f"""
+            background: {self.accent};
+            color: white;
             border: none;
-            border-radius: {radius}px;
-            padding: 8px 16px;
-            font-size: {Typography.SIZE_NORMAL}px;
+            border-radius: {Radius.MD}px;
+            padding: {Spacing.SM}px {Spacing.LG}px;
             font-weight: {Typography.WEIGHT_MEDIUM};
-        }}
-        QPushButton:hover {{
-            background-color: {hover_color};
-        }}
-        QPushButton:pressed {{
-            background-color: {bg_color};
-        }}
-        QPushButton:disabled {{
-            background-color: {Colors.DISABLED};
-            color: {Colors.TEXT_SECONDARY};
-        }}
+            font-size: {Typography.SIZE_MD}px;
+        """
+
+    def get_hub_button_hover_style(self) -> str:
+        """Get hover style for hub buttons."""
+        return f"background: {self.accent_hover};"
+
+    def get_card_style(self) -> str:
+        """Get stylesheet for mode cards."""
+        hover_bg = Colors.DARK_SURFACE if self.is_dark else "#EEF2F7"
+        return f"""
+            QPushButton#modeCard {{
+                text-align: center;
+                padding: {Spacing.XL}px;
+                border: 1px solid {self.border};
+                border-radius: {Radius.XL}px;
+                background: {self.surface};
+                color: {self.text};
+                font-size: {Typography.SIZE_MD}px;
+            }}
+            QPushButton#modeCard:hover {{
+                border: 2px solid {self.accent};
+                background: {hover_bg};
+            }}
+            QPushButton#modeCard:disabled {{
+                background: {self.surface};
+                color: {self.text_secondary};
+                border-color: {self.border};
+            }}
+        """
+
+
+def detect_dark_mode(widget) -> bool:
+    """Detect if the system/widget is in dark mode.
+
+    Args:
+        widget: QWidget to check palette from
+
+    Returns:
+        True if dark mode
     """
-
-
-def get_card_style(
-    bg_color: str,
-    border_color: str,
-    text_color: str,
-    hover_border: str = Colors.ACCENT,
-    radius: int = Radius.LG
-) -> str:
-    """Generate card button stylesheet."""
-    return f"""
-        QPushButton#modeCard {{
-            text-align: center;
-            padding: {Spacing.CARD_PADDING}px;
-            border: 1px solid {border_color};
-            border-radius: {radius}px;
-            background: {bg_color};
-            color: {text_color};
-            font-size: {Typography.SIZE_NORMAL}px;
-        }}
-        QPushButton#modeCard:hover {{
-            border-color: {hover_border};
-            border-width: 2px;
-        }}
-        QPushButton#modeCard:disabled {{
-            background: {Colors.DISABLED};
-            color: {Colors.TEXT_SECONDARY};
-        }}
-    """
-
-
-def get_header_style(
-    bg_color: str,
-    text_color: str,
-    border_color: str
-) -> str:
-    """Generate header frame stylesheet."""
-    return f"""
-        #viewerHeader, #moduleHeader {{
-            background: {bg_color};
-            border-bottom: 1px solid {border_color};
-        }}
-        #viewerHeader QLabel, #moduleHeader QLabel {{
-            color: {text_color};
-        }}
-        #titleLabel {{
-            font-size: {Typography.SIZE_MEDIUM}px;
-            font-weight: {Typography.WEIGHT_SEMIBOLD};
-            color: {Colors.PRIMARY};
-        }}
-        #subtitleLabel {{
-            font-size: {Typography.SIZE_SMALL}px;
-            color: {Colors.TEXT_SECONDARY};
-        }}
-    """
+    from PyQt5.QtGui import QPalette
+    palette = widget.palette()
+    window_color = palette.color(QPalette.Window)
+    return window_color.lightness() < 128
