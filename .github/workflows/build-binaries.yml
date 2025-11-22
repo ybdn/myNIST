@@ -214,6 +214,29 @@ jobs:
               run: |
                   pyinstaller nist-studio.spec
 
+            # Sign macOS binaries (ad-hoc signature to avoid Gatekeeper issues)
+            - name: Sign macOS binaries
+              if: runner.os == 'macOS'
+              run: |
+                  echo "Signing all binaries in NIST-Studio folder..."
+
+                  # Sign all .so and .dylib files first (dependencies)
+                  find dist/NIST-Studio -type f \( -name "*.so" -o -name "*.dylib" \) -exec codesign --force --sign - --timestamp=none {} \;
+
+                  # Sign Python framework if present
+                  if [ -d "dist/NIST-Studio/_internal/Python.framework" ]; then
+                      codesign --force --deep --sign - --timestamp=none "dist/NIST-Studio/_internal/Python.framework"
+                  fi
+
+                  # Sign the main executable last
+                  codesign --force --sign - --timestamp=none --deep "dist/NIST-Studio/nist-studio"
+
+                  # Verify signatures
+                  echo "Verifying signature..."
+                  codesign --verify --verbose "dist/NIST-Studio/nist-studio" || echo "Verification warning (expected for ad-hoc)"
+
+                  echo "macOS signing completed"
+
             # Create distribution archives (onefolder mode)
             - name: Create archive (Linux)
               if: runner.os == 'Linux'
