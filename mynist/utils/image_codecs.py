@@ -33,10 +33,22 @@ except ImportError:
     imagecodecs = None
 
 
+def _is_macos_arm64() -> bool:
+    """Vérifie si on tourne sur macOS ARM64 (Apple Silicon)."""
+    import platform
+    import sys
+    return sys.platform == 'darwin' and platform.machine() == 'arm64'
+
+
 def _decode_wsq_python(data: bytes) -> Tuple[Optional[Image.Image], str]:
     """Décode WSQ via le package Python wsq."""
     if not WSQ_AVAILABLE:
         return None, "Package wsq non disponible"
+
+    # Le package wsq Python a un bug connu qui cause un segfault sur macOS ARM64
+    # Voir: https://github.com/mgeier/wsq/issues - crash dans wsq_decode_mem
+    if _is_macos_arm64():
+        return None, "Package wsq désactivé sur macOS ARM64 (bug segfault connu)"
 
     try:
         img = Image.open(BytesIO(data))
