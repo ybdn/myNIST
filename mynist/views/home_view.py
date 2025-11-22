@@ -8,6 +8,7 @@ from PyQt5.QtGui import QIcon, QPixmap, QPalette
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
@@ -114,14 +115,42 @@ class HomeView(QWidget):
         logo_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(logo_label)
 
-        # Version and GitHub link
-        subtitle = QLabel(
-            f'v{APP_VERSION} — <a href="https://github.com/ybdn">github.com/ybdn</a>'
-        )
-        subtitle.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
-        subtitle.setAlignment(Qt.AlignCenter)
-        subtitle.setOpenExternalLinks(True)
-        layout.addWidget(subtitle)
+        # Version and GitHub link row
+        info_row = QHBoxLayout()
+        info_row.setContentsMargins(0, 0, 0, 0)
+        info_row.setSpacing(Spacing.MD)
+        info_row.setAlignment(Qt.AlignCenter)
+
+        version_label = QLabel(f"v{APP_VERSION}")
+        version_label.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
+        info_row.addWidget(version_label)
+
+        # Separator
+        sep_label = QLabel("—")
+        sep_label.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
+        info_row.addWidget(sep_label)
+
+        # GitHub button with icon
+        github_btn = QPushButton("ybdn")
+        github_btn.setCursor(Qt.PointingHandCursor)
+        github_btn.setStyleSheet(f"""
+            QPushButton {{
+                font-size: {Typography.SIZE_MD}px;
+                border: none;
+                background: transparent;
+                padding: {Spacing.XS}px {Spacing.SM}px;
+            }}
+            QPushButton:hover {{
+                text-decoration: underline;
+            }}
+        """)
+        github_icon = self._load_icon("github", 18)
+        if not github_icon.isNull():
+            github_btn.setIcon(github_icon)
+        github_btn.clicked.connect(self._open_github)
+        info_row.addWidget(github_btn)
+
+        layout.addLayout(info_row)
 
         container.setLayout(layout)
         return container
@@ -221,3 +250,9 @@ class HomeView(QWidget):
     def set_recent_entries(self, entries):
         """Compatibility stub."""
         pass
+
+    def _open_github(self):
+        """Open GitHub profile in browser."""
+        from PyQt5.QtGui import QDesktopServices
+        from PyQt5.QtCore import QUrl
+        QDesktopServices.openUrl(QUrl("https://github.com/ybdn"))
