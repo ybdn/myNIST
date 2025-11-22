@@ -224,6 +224,11 @@ jobs:
                   find "dist/NIST-Studio.app" -type f \( -name "*.so" -o -name "*.dylib" \) \
                       -exec codesign --force --sign - --timestamp=none {} \;
 
+                  # Sign NBIS binaries (dwsq, cwsq, nfiq) if present
+                  echo "Signing NBIS binaries..."
+                  find "dist/NIST-Studio.app" -type f \( -name "dwsq" -o -name "cwsq" -o -name "nfiq" \) \
+                      -exec codesign --force --sign - --timestamp=none {} \;
+
                   # Sign any frameworks
                   find "dist/NIST-Studio.app/Contents/Frameworks" -name "*.framework" -type d 2>/dev/null | while read fw; do
                       codesign --force --deep --sign - --timestamp=none "$fw"
