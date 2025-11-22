@@ -1,9 +1,32 @@
 # Changelog
 
-All notable changes to myNIST will be documented in this file.
+All notable changes to NIST Studio will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+### Changed
+- Renamed project branding from "myNIST" to "NIST Studio"
+- Reorganized documentation structure:
+  - Moved user guides to `docs/` folder
+  - Cleaned up redundant documentation files
+  - Updated index with new file paths
+- Rewrote README.md with professional formatting
+
+### Added
+- CONTRIBUTING.md with development guidelines
+- GitHub issue templates (bug report, feature request)
+- GitHub pull request template
+
+### Removed
+- Duplicate SVG icons (kept `comparison_toolbar/` versions)
+- Redundant test files (`*_export_test_export_test.nist`)
+- Obsolete documentation files (`plan.md`, `1-memo.md`, `idees-amelioration.md`)
+
+### Fixed
+- `.gitignore` no longer excludes `*.spec` (PyInstaller config needed)
 
 ## [0.1.0] - 2025-01-21
 
