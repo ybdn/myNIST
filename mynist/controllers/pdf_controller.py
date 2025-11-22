@@ -16,6 +16,27 @@ class PDFController:
     def __init__(self, dpi: int = 300):
         self.dpi = dpi
 
+    def generate_preview(self, nist_file: NISTFile) -> Tuple[Optional[Image.Image], str]:
+        """Génère un aperçu du PDF sous forme d'image PIL.
+
+        Args:
+            nist_file: fichier NIST déjà parsé.
+
+        Returns:
+            (image PIL, message d'erreur) ; image None si erreur.
+        """
+        buckets = self._collect_images(nist_file)
+        if not buckets:
+            return None, "Aucune image (Type-14/4/10/7/15) n'a été détectée dans ce fichier."
+
+        metadata = self._collect_metadata(nist_file)
+
+        try:
+            page = self._render_page(buckets, metadata)
+            return page, ""
+        except Exception as exc:
+            return None, f"Erreur lors de la génération de l'aperçu : {exc}"
+
     def export_dacty_pdf(self, nist_file: NISTFile, output_path: str) -> Tuple[bool, str]:
         """Exporte un PDF décadactylaire organisé (pouces/main gauche/main droite + simultanés + paumes).
 
@@ -33,111 +54,116 @@ class PDFController:
         metadata = self._collect_metadata(nist_file)
 
         try:
-            # Génération via Pillow en A4 (300 DPI par défaut)
-            dpi = self.dpi
-            page_w = int(8.27 * dpi)  # 210mm
-            page_h = int(11.69 * dpi)  # 297mm
+            page = self._render_page(buckets, metadata)
+            page.save(output_path, "PDF", resolution=self.dpi)
+            return True, ""
+        except Exception as exc:
+            return False, f"Erreur lors de la génération du PDF : {exc}"
 
-            page = Image.new("RGB", (page_w, page_h), "white")
-            draw = ImageDraw.Draw(page)
-            font_title = ImageFont.load_default()
-            font_body = ImageFont.load_default()
-            draw.text((80, 40), "Relevé décadactylaire", fill="black", font=font_title)
-            draw.text((80, 70), f"TCN : {metadata.get('TCN', 'N/A')}", fill="black", font=font_body)
-            draw.text((80, 90), f"ORI : {metadata.get('ORI', 'N/A')}", fill="black", font=font_body)
-            draw.text((80, 110), f"Date : {metadata.get('DATE', 'N/A')}", fill="black", font=font_body)
-            draw.text((80, 130), f"Sujet : {metadata.get('NAME', 'N/A')}", fill="black", font=font_body)
+    def _render_page(self, buckets: Dict[str, List[Dict[str, object]]], metadata: Dict[str, str]) -> Image.Image:
+        """Génère la page du relevé décadactylaire."""
+        # Génération via Pillow en A4 (300 DPI par défaut)
+        dpi = self.dpi
+        page_w = int(8.27 * dpi)  # 210mm
+        page_h = int(11.69 * dpi)  # 297mm
 
-            # Layout spécifique : colonnes 2x5 pour les doigts (gauche puis droite),
-            # suivi d'une rangée simultanés et paumes.
-            margin_x, margin_y = 60, 170
-            cell_w = int((page_w - 2 * margin_x) / 2)
-            cell_h = int((page_h - margin_y - 200) / 5)
+        page = Image.new("RGB", (page_w, page_h), "white")
+        draw = ImageDraw.Draw(page)
+        font_title = ImageFont.load_default()
+        font_body = ImageFont.load_default()
+        draw.text((80, 40), "Relevé décadactylaire", fill="black", font=font_title)
+        draw.text((80, 70), f"TCN : {metadata.get('TCN', 'N/A')}", fill="black", font=font_body)
+        draw.text((80, 90), f"ORI : {metadata.get('ORI', 'N/A')}", fill="black", font=font_body)
+        draw.text((80, 110), f"Date : {metadata.get('DATE', 'N/A')}", fill="black", font=font_body)
+        draw.text((80, 130), f"Sujet : {metadata.get('NAME', 'N/A')}", fill="black", font=font_body)
 
-            def paste_slot(img_info, col, row):
-                x = margin_x + col * cell_w
-                y = margin_y + row * cell_h
+        # Layout spécifique : colonnes 2x5 pour les doigts (gauche puis droite),
+        # suivi d'une rangée simultanés et paumes.
+        margin_x, margin_y = 60, 170
+        cell_w = int((page_w - 2 * margin_x) / 2)
+        cell_h = int((page_h - margin_y - 200) / 5)
+
+        def paste_slot(img_info, col, row):
+            x = margin_x + col * cell_w
+            y = margin_y + row * cell_h
+            pil_img = img_info["image"].convert("RGB")
+            max_w = cell_w - 20
+            max_h = cell_h - 40
+            img_w, img_h = pil_img.size
+            scale = min(max_w / img_w, max_h / img_h)
+            new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
+            resized = pil_img.resize(new_size)
+            paste_x = x + int((max_w - new_size[0]) / 2) + 10
+            paste_y = y + 20
+            page.paste(resized, (paste_x, paste_y))
+            label = img_info["label"]
+            draw.text((x + 10, y + max_h + 20), label, fill="black", font=font_body)
+
+        # Doigts main gauche (P I M A O)
+        for idx, key in enumerate(["LG_P", "LG_I", "LG_M", "LG_A", "LG_O"]):
+            if buckets.get(key):
+                paste_slot(buckets[key][0], 0, idx)
+        # Doigts main droite (P I M A O)
+        for idx, key in enumerate(["RD_P", "RD_I", "RD_M", "RD_A", "RD_O"]):
+            if buckets.get(key):
+                paste_slot(buckets[key][0], 1, idx)
+
+        # Ligne simultanés (colonne gauche/droite)
+        base_y = margin_y + 5 * cell_h
+        sim_labels = ["SIM_MAIN_GAUCHE", "SIM_POUCES", "SIM_MAIN_DROITE"]
+        for i, key in enumerate(sim_labels):
+            if key in buckets:
+                img_info = buckets[key][0]
                 pil_img = img_info["image"].convert("RGB")
-                max_w = cell_w - 20
-                max_h = cell_h - 40
+                max_w = int((page_w - 2 * margin_x) / 3) - 20
+                max_h = 180
                 img_w, img_h = pil_img.size
                 scale = min(max_w / img_w, max_h / img_h)
                 new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
                 resized = pil_img.resize(new_size)
-                paste_x = x + int((max_w - new_size[0]) / 2) + 10
-                paste_y = y + 20
+                start_x = margin_x + i * (max_w + 20)
+                paste_x = start_x + int((max_w - new_size[0]) / 2)
+                paste_y = base_y + 20
                 page.paste(resized, (paste_x, paste_y))
-                label = img_info["label"]
-                draw.text((x + 10, y + max_h + 20), label, fill="black", font=font_body)
+                draw.text((start_x + 5, base_y + max_h + 30), img_info["label"], fill="black", font=font_body)
 
-            # Doigts main gauche (P I M A O)
-            for idx, key in enumerate(["LG_P", "LG_I", "LG_M", "LG_A", "LG_O"]):
-                if buckets.get(key):
-                    paste_slot(buckets[key][0], 0, idx)
-            # Doigts main droite (P I M A O)
-            for idx, key in enumerate(["RD_P", "RD_I", "RD_M", "RD_A", "RD_O"]):
-                if buckets.get(key):
-                    paste_slot(buckets[key][0], 1, idx)
+        # Paumes
+        base_y2 = base_y + 230
+        for i, key in enumerate(["PAUME_GAUCHE", "PAUME_DROITE"]):
+            if key in buckets:
+                img_info = buckets[key][0]
+                pil_img = img_info["image"].convert("RGB")
+                max_w = int((page_w - 2 * margin_x) / 2) - 20
+                max_h = 220
+                img_w, img_h = pil_img.size
+                scale = min(max_w / img_w, max_h / img_h)
+                new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
+                resized = pil_img.resize(new_size)
+                start_x = margin_x + i * (max_w + 20)
+                paste_x = start_x + int((max_w - new_size[0]) / 2)
+                paste_y = base_y2 + 20
+                page.paste(resized, (paste_x, paste_y))
+                draw.text((start_x + 5, base_y2 + max_h + 30), img_info["label"], fill="black", font=font_body)
 
-            # Ligne simultanés (colonne gauche/droite)
-            base_y = margin_y + 5 * cell_h
-            sim_labels = ["SIM_MAIN_GAUCHE", "SIM_POUCES", "SIM_MAIN_DROITE"]
-            for i, key in enumerate(sim_labels):
-                if key in buckets:
-                    img_info = buckets[key][0]
-                    pil_img = img_info["image"].convert("RGB")
-                    max_w = int((page_w - 2 * margin_x) / 3) - 20
-                    max_h = 180
-                    img_w, img_h = pil_img.size
-                    scale = min(max_w / img_w, max_h / img_h)
-                    new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
-                    resized = pil_img.resize(new_size)
-                    start_x = margin_x + i * (max_w + 20)
-                    paste_x = start_x + int((max_w - new_size[0]) / 2)
-                    paste_y = base_y + 20
-                    page.paste(resized, (paste_x, paste_y))
-                    draw.text((start_x + 5, base_y + max_h + 30), img_info["label"], fill="black", font=font_body)
+        # Extras non mappés : placer en bandeau sous les paumes
+        extras = buckets.get("EXTRA", [])
+        if extras:
+            extra_y = base_y2 + 260
+            max_w = int((page_w - 2 * margin_x) / 3) - 20
+            max_h = 180
+            for i, img_info in enumerate(extras[:3]):
+                pil_img = img_info["image"].convert("RGB")
+                img_w, img_h = pil_img.size
+                scale = min(max_w / img_w, max_h / img_h)
+                new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
+                resized = pil_img.resize(new_size)
+                start_x = margin_x + i * (max_w + 20)
+                paste_x = start_x + int((max_w - new_size[0]) / 2)
+                paste_y = extra_y + 10
+                page.paste(resized, (paste_x, paste_y))
+                draw.text((start_x + 5, extra_y + max_h + 20), img_info["label"], fill="black", font=font_body)
 
-            # Paumes
-            base_y2 = base_y + 230
-            for i, key in enumerate(["PAUME_GAUCHE", "PAUME_DROITE"]):
-                if key in buckets:
-                    img_info = buckets[key][0]
-                    pil_img = img_info["image"].convert("RGB")
-                    max_w = int((page_w - 2 * margin_x) / 2) - 20
-                    max_h = 220
-                    img_w, img_h = pil_img.size
-                    scale = min(max_w / img_w, max_h / img_h)
-                    new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
-                    resized = pil_img.resize(new_size)
-                    start_x = margin_x + i * (max_w + 20)
-                    paste_x = start_x + int((max_w - new_size[0]) / 2)
-                    paste_y = base_y2 + 20
-                    page.paste(resized, (paste_x, paste_y))
-                    draw.text((start_x + 5, base_y2 + max_h + 30), img_info["label"], fill="black", font=font_body)
-
-            # Extras non mappés : placer en bandeau sous les paumes
-            extras = buckets.get("EXTRA", [])
-            if extras:
-                extra_y = base_y2 + 260
-                max_w = int((page_w - 2 * margin_x) / 3) - 20
-                max_h = 180
-                for i, img_info in enumerate(extras[:3]):
-                    pil_img = img_info["image"].convert("RGB")
-                    img_w, img_h = pil_img.size
-                    scale = min(max_w / img_w, max_h / img_h)
-                    new_size = (max(1, int(img_w * scale)), max(1, int(img_h * scale)))
-                    resized = pil_img.resize(new_size)
-                    start_x = margin_x + i * (max_w + 20)
-                    paste_x = start_x + int((max_w - new_size[0]) / 2)
-                    paste_y = extra_y + 10
-                    page.paste(resized, (paste_x, paste_y))
-                    draw.text((start_x + 5, extra_y + max_h + 20), img_info["label"], fill="black", font=font_body)
-
-            page.save(output_path, "PDF", resolution=dpi)
-            return True, ""
-        except Exception as exc:  # pragma: no cover
-            return False, f"Erreur lors de la génération du PDF : {exc}"
+        return page
 
     def _collect_metadata(self, nist_file: NISTFile) -> Dict[str, str]:
         """Récupère des métadonnées basiques depuis Type-1/2."""

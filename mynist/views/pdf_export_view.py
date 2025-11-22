@@ -12,7 +12,11 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QLineEdit,
     QGroupBox,
+    QScrollArea,
+    QSplitter,
+    QFrame,
 )
+from PyQt5.QtGui import QPixmap, QImage
 
 from mynist.utils.design_tokens import Typography, Spacing, Radius, load_svg_icon
 
@@ -25,10 +29,12 @@ class PdfExportView(QWidget):
     back_requested = pyqtSignal()
     import_requested = pyqtSignal()
     close_requested = pyqtSignal()
+    preview_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_file: Optional[str] = None
+        self._preview_image = None
         self._build_ui()
 
     def _get_icon_path(self, name: str) -> Path:
@@ -42,41 +48,43 @@ class PdfExportView(QWidget):
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(Spacing.XXXL, Spacing.XXL, Spacing.XXXL, Spacing.XXL)
-        layout.setSpacing(Spacing.XL)
+        layout.setContentsMargins(Spacing.LG, Spacing.MD, Spacing.LG, Spacing.MD)
+        layout.setSpacing(Spacing.MD)
 
         # Header with back button and title
         header = self._build_header()
         layout.addLayout(header)
 
-        # Content area (centered)
-        content = QWidget()
-        content.setMaximumWidth(700)
-        content_layout = QVBoxLayout()
-        content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(Spacing.XL)
+        # Main splitter: controls on left, preview on right
+        splitter = QSplitter(Qt.Horizontal)
+
+        # Left panel: controls
+        left_panel = QWidget()
+        left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
+        left_layout.setSpacing(Spacing.LG)
 
         # Source file group
         source_group = self._build_source_group()
-        content_layout.addWidget(source_group)
+        left_layout.addWidget(source_group)
 
         # Destination group
         dest_group = self._build_destination_group()
-        content_layout.addWidget(dest_group)
+        left_layout.addWidget(dest_group)
 
-        # Export button (centered)
-        export_row = QHBoxLayout()
-        export_row.addStretch()
+        # Buttons row
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(Spacing.MD)
 
         self.export_btn = QPushButton("Exporter le PDF")
         self.export_btn.setCursor(Qt.PointingHandCursor)
-        self.export_btn.setMinimumWidth(200)
-        self.export_btn.setEnabled(False)  # Disabled until a file is loaded
+        self.export_btn.setMinimumWidth(180)
+        self.export_btn.setEnabled(False)
         self.export_btn.setStyleSheet(f"""
             QPushButton {{
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
                 font-size: {Typography.SIZE_MD}px;
-                padding: {Spacing.MD}px {Spacing.XXXL}px;
+                padding: {Spacing.MD}px {Spacing.XL}px;
                 border-radius: {Radius.LG}px;
             }}
         """)
@@ -84,25 +92,26 @@ class PdfExportView(QWidget):
         export_icon = self._load_icon("pdf", 20)
         if not export_icon.isNull():
             self.export_btn.setIcon(export_icon)
-        export_row.addWidget(self.export_btn)
+        buttons_row.addWidget(self.export_btn)
 
-        export_row.addStretch()
-        content_layout.addLayout(export_row)
+        buttons_row.addStretch()
+        left_layout.addLayout(buttons_row)
 
         # Info panel
         info_group = self._build_info_group()
-        content_layout.addWidget(info_group)
+        left_layout.addWidget(info_group)
 
-        content.setLayout(content_layout)
+        left_layout.addStretch()
+        left_panel.setLayout(left_layout)
 
-        # Center the content
-        center_layout = QHBoxLayout()
-        center_layout.addStretch()
-        center_layout.addWidget(content)
-        center_layout.addStretch()
+        # Right panel: preview
+        right_panel = self._build_preview_panel()
 
-        layout.addLayout(center_layout)
-        layout.addStretch()
+        splitter.addWidget(left_panel)
+        splitter.addWidget(right_panel)
+        splitter.setSizes([400, 500])
+
+        layout.addWidget(splitter, 1)
 
         self.setLayout(layout)
 
@@ -263,6 +272,91 @@ class PdfExportView(QWidget):
 
         group.setLayout(layout)
         return group
+
+    def _build_preview_panel(self) -> QWidget:
+        """Build the PDF preview panel."""
+        panel = QFrame()
+        panel.setStyleSheet(f"""
+            QFrame {{
+                background-color: #1a1a1a;
+                border-radius: {Radius.LG}px;
+            }}
+        """)
+        layout = QVBoxLayout()
+        layout.setContentsMargins(Spacing.MD, Spacing.MD, Spacing.MD, Spacing.MD)
+        layout.setSpacing(Spacing.SM)
+
+        # Header
+        header = QHBoxLayout()
+        title = QLabel("Aperçu du PDF")
+        title.setStyleSheet(f"""
+            font-weight: {Typography.WEIGHT_SEMIBOLD};
+            font-size: {Typography.SIZE_MD}px;
+            color: #ffffff;
+        """)
+        header.addWidget(title)
+        header.addStretch()
+        layout.addLayout(header)
+
+        # Scroll area for preview
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #2a2a2a;
+            }
+        """)
+
+        # Preview label
+        self.preview_label = QLabel("Chargez un fichier NIST pour voir l'aperçu")
+        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setStyleSheet("color: #888888;")
+        self.preview_label.setMinimumSize(300, 400)
+        scroll.setWidget(self.preview_label)
+
+        layout.addWidget(scroll, 1)
+
+        panel.setLayout(layout)
+        return panel
+
+    def set_preview_image(self, pil_image):
+        """Set the preview image from a PIL Image."""
+        if pil_image is None:
+            self.preview_label.setText("Impossible de générer l'aperçu")
+            self.preview_label.setPixmap(QPixmap())
+            return
+
+        # Convert PIL to QPixmap
+        if pil_image.mode != 'RGB':
+            pil_image = pil_image.convert('RGB')
+
+        # Scale down for preview (A4 at 300 DPI is large)
+        max_height = 800
+        if pil_image.height > max_height:
+            ratio = max_height / pil_image.height
+            new_size = (int(pil_image.width * ratio), max_height)
+            pil_image = pil_image.resize(new_size)
+
+        image_bytes = pil_image.tobytes()
+        qimage = QImage(
+            image_bytes,
+            pil_image.width,
+            pil_image.height,
+            pil_image.width * 3,
+            QImage.Format_RGB888,
+        )
+
+        pixmap = QPixmap.fromImage(qimage)
+        self.preview_label.setPixmap(pixmap)
+        self.preview_label.setText("")
+        self._preview_image = pil_image
+
+    def clear_preview(self):
+        """Clear the preview."""
+        self.preview_label.setText("Chargez un fichier NIST pour voir l'aperçu")
+        self.preview_label.setPixmap(QPixmap())
+        self._preview_image = None
 
     def _on_export_clicked(self):
         """Handle export button click."""

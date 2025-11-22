@@ -472,6 +472,7 @@ class MainWindow(QMainWindow):
         self.home_view.set_current_file(None)
         self._update_viewer_file_label(None)
         self.pdf_view.set_current_file(None)
+        self.pdf_view.clear_preview()
         self.is_modified = False
         self.last_change = None
 
@@ -486,6 +487,18 @@ class MainWindow(QMainWindow):
                 self.viewer_file_label.setText(f"Fichier : {name}")
             else:
                 self.viewer_file_label.setText("Aucun fichier")
+
+    def _update_pdf_preview(self, nist_file=None):
+        """Generate and display PDF preview."""
+        if nist_file is None:
+            self.pdf_view.clear_preview()
+            return
+
+        preview_img, error = self.pdf_controller.generate_preview(nist_file)
+        if preview_img:
+            self.pdf_view.set_preview_image(preview_img)
+        else:
+            self.pdf_view.clear_preview()
 
     def dragEnterEvent(self, event):
         """Accept drag if it contains a supported local file."""
@@ -578,6 +591,7 @@ class MainWindow(QMainWindow):
             self.refresh_recent_entries()
             self.home_view.set_current_file(file_path, "viewer")
             self.pdf_view.set_current_file(file_path)
+            self._update_pdf_preview(nist_file)
             self._update_viewer_file_label(file_path)
             self.is_modified = False
             self.last_change = None
