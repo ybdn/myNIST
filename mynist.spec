@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec file for myNIST application."""
+"""PyInstaller spec file for NIST Studio application."""
 
+import sys
 from pathlib import Path
 
 block_cipher = None
@@ -48,6 +49,14 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# Determine icon path based on OS
+if sys.platform == 'win32':
+    icon_path = 'mynist/resources/icons/appicon-nist-studio.ico'
+elif sys.platform == 'darwin':
+    icon_path = 'mynist/resources/icons/appicon-nist-studio-256.png'
+else:
+    icon_path = 'mynist/resources/icons/appicon-nist-studio-256.png'
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -55,10 +64,10 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name='mynist',
+    name='nist-studio',
     debug=False,
     bootloader_ignore_signals=False,
-    strip=True,  # Strip symbols to reduce size (Ubuntu optimization)
+    strip=False,  # Disabled: strip causes issues on Windows
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
@@ -68,5 +77,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='mynist/resources/icons/appicon-nist-studio.ico',  # Application icon
+    icon=icon_path,
 )
