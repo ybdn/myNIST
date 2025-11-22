@@ -956,33 +956,25 @@ class ComparisonView(QWidget):
         self._set_nist_nav_enabled(side, True)
 
     def _build_unified_panel(self) -> QWidget:
-        """Panneau unifié avec toggle pour sélectionner l'image cible."""
+        """Panneau unifié réorganisé horizontalement."""
         widget = QWidget()
-        main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(8, 8, 8, 8)
-        main_layout.setSpacing(12)
 
-        # Libellé spécial overlay
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(10, 10, 10, 10)
+        main_layout.setSpacing(10)
+
         self.overlay_mode_label = QLabel("Modification du calque")
         self.overlay_mode_label.setStyleSheet("font-weight: bold;")
         self.overlay_mode_label.setVisible(False)
         main_layout.addWidget(self.overlay_mode_label)
 
-        # === Toggle switch pour sélectionner le côté ===
+        # Bandeau cible
         self.toggle_frame = QFrame()
-        self.toggle_frame.setStyleSheet("""
-            QFrame {
-                background: rgba(59, 130, 246, 0.08);
-                border-radius: 8px;
-                padding: 4px;
-            }
-        """)
         toggle_layout = QHBoxLayout()
-        toggle_layout.setContentsMargins(8, 6, 8, 6)
+        toggle_layout.setContentsMargins(12, 8, 12, 8)
         toggle_layout.setSpacing(12)
-
-        toggle_layout.addWidget(QLabel("<b>Appliquer à :</b>"))
-
+        title_toggle = QLabel("Appliquer à")
+        toggle_layout.addWidget(title_toggle)
         self.side_toggle_group = QButtonGroup(self)
         self.left_radio = QRadioButton("Image gauche")
         self.left_radio.setChecked(True)
@@ -990,33 +982,32 @@ class ComparisonView(QWidget):
         self.side_toggle_group.addButton(self.left_radio, 0)
         self.side_toggle_group.addButton(self.right_radio, 1)
         self.side_toggle_group.buttonClicked.connect(self._on_side_toggle_changed)
-
         toggle_layout.addWidget(self.left_radio)
         toggle_layout.addWidget(self.right_radio)
         toggle_layout.addStretch()
         self.toggle_frame.setLayout(toggle_layout)
         main_layout.addWidget(self.toggle_frame)
 
-        # === Section Calibration / Resample ===
-        calib_group = QGroupBox("Calibration / Rééchantillonnage")
+        row = QHBoxLayout()
+        row.setSpacing(10)
+
+        # Bloc Calibration / Resample
+        calib_group = QFrame()
         calib_layout = QVBoxLayout()
-        calib_layout.setContentsMargins(10, 10, 10, 10)
+        calib_layout.setContentsMargins(12, 10, 12, 10)
         calib_layout.setSpacing(8)
-
-        # DPI actuel
+        calib_title = QLabel("Calibration & Resample")
+        calib_layout.addWidget(calib_title)
+        calib_hint = QLabel("Calibrez 2 points puis cible DPI.")
+        calib_layout.addWidget(calib_hint)
         self.unified_dpi_label = QLabel("DPI : Non calibré")
-        self.unified_dpi_label.setStyleSheet("font-weight: bold; color: #3b82f6;")
         calib_layout.addWidget(self.unified_dpi_label)
-
-        # Bouton Calibrer
         calib_btn = QPushButton("Calibrer (2 points)")
         calib_btn.setToolTip("Cliquez 2 points sur l'image et entrez la distance réelle en mm")
         calib_btn.clicked.connect(self._start_calibration_unified)
         calib_layout.addWidget(calib_btn)
-
-        # Ligne Resample
         resample_row = QHBoxLayout()
-        resample_row.setSpacing(8)
+        resample_row.setSpacing(6)
         self.unified_target_dpi = QSpinBox()
         self.unified_target_dpi.setRange(72, 1200)
         self.unified_target_dpi.setValue(500)
@@ -1028,33 +1019,16 @@ class ComparisonView(QWidget):
         resample_btn.clicked.connect(self._resample_image_unified)
         resample_row.addWidget(resample_btn)
         calib_layout.addLayout(resample_row)
-
-        # Ligne actions (reset + export)
-        actions_row = QHBoxLayout()
-        actions_row.setSpacing(8)
-
-        reset_img_btn = QPushButton("Réinitialiser image")
-        reset_img_btn.setToolTip("Restaurer l'image originale (annule resample, rotation, améliorations)")
-        reset_img_btn.clicked.connect(self._reset_image_unified)
-        actions_row.addWidget(reset_img_btn)
-
-        export_img_btn = QPushButton("Exporter JPG")
-        export_img_btn.setToolTip("Exporter l'image avec tous les réglages appliqués")
-        export_img_btn.clicked.connect(self._export_image_unified)
-        actions_row.addWidget(export_img_btn)
-
-        calib_layout.addLayout(actions_row)
-
         calib_group.setLayout(calib_layout)
-        main_layout.addWidget(calib_group)
+        row.addWidget(calib_group, 1)
 
-        # === Section Amélioration (popup) ===
-        enhance_container = QWidget()
+        # Bloc Améliorations
+        enhance_group = QFrame()
         enhance_layout = QVBoxLayout()
-        enhance_layout.setContentsMargins(10, 10, 10, 10)
-        enhance_layout.setSpacing(6)
-
-        # Luminosité
+        enhance_layout.setContentsMargins(12, 10, 12, 10)
+        enhance_layout.setSpacing(8)
+        title_enh = QLabel("Améliorations")
+        enhance_layout.addWidget(title_enh)
         enhance_layout.addWidget(QLabel("Luminosité"))
         self.unified_brightness = QSlider(Qt.Horizontal)
         self.unified_brightness.setRange(-100, 100)
@@ -1062,8 +1036,6 @@ class ComparisonView(QWidget):
         self.unified_brightness.setToolTip("Luminosité (-100 à +100)")
         self.unified_brightness.valueChanged.connect(self._on_unified_enhancement_changed)
         enhance_layout.addWidget(self.unified_brightness)
-
-        # Contraste
         enhance_layout.addWidget(QLabel("Contraste"))
         self.unified_contrast = QSlider(Qt.Horizontal)
         self.unified_contrast.setRange(50, 200)
@@ -1071,8 +1043,6 @@ class ComparisonView(QWidget):
         self.unified_contrast.setToolTip("Contraste (0.5 à 2.0)")
         self.unified_contrast.valueChanged.connect(self._on_unified_enhancement_changed)
         enhance_layout.addWidget(self.unified_contrast)
-
-        # Gamma
         enhance_layout.addWidget(QLabel("Gamma"))
         self.unified_gamma = QSlider(Qt.Horizontal)
         self.unified_gamma.setRange(50, 200)
@@ -1080,70 +1050,71 @@ class ComparisonView(QWidget):
         self.unified_gamma.setToolTip("Gamma (0.5 à 2.0)")
         self.unified_gamma.valueChanged.connect(self._on_unified_enhancement_changed)
         enhance_layout.addWidget(self.unified_gamma)
-
-        # Inversion
+        inv_row = QHBoxLayout()
+        inv_row.setSpacing(6)
         self.unified_invert = QPushButton("Inverser (négatif)")
         self.unified_invert.setCheckable(True)
         self.unified_invert.clicked.connect(self._on_unified_enhancement_changed)
-        enhance_layout.addWidget(self.unified_invert)
-
-        # Effacer arrière-plan (overlay)
+        inv_row.addWidget(self.unified_invert)
         self.bg_remove_btn = QPushButton("Effacer l'arrière-plan")
         self.bg_remove_btn.setToolTip("Rend transparent le fond uni du calque (overlay)")
         self.bg_remove_btn.clicked.connect(self._remove_background_unified)
         self.bg_remove_btn.setEnabled(False)
-        enhance_layout.addWidget(self.bg_remove_btn)
-
-        # Reset
+        inv_row.addWidget(self.bg_remove_btn)
+        enhance_layout.addLayout(inv_row)
         reset_btn = QPushButton("Réinitialiser")
         reset_btn.clicked.connect(self._reset_enhancements_unified)
         enhance_layout.addWidget(reset_btn)
+        enhance_group.setLayout(enhance_layout)
+        row.addWidget(enhance_group, 2)
 
-        enhance_container.setLayout(enhance_layout)
-
-        self.enhance_popup = QDialog(self)
-        self.enhance_popup.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
-        popup_layout = QVBoxLayout()
-        popup_layout.setContentsMargins(0, 0, 0, 0)
-        popup_layout.addWidget(enhance_container)
-        self.enhance_popup.setLayout(popup_layout)
-        self.enhance_popup.setFixedWidth(320)
-
-        self.enhance_button = QPushButton("Améliorations")
-        self.enhance_button.setToolTip("Ouvrir les réglages d'image (popup)")
-        self.enhance_button.clicked.connect(lambda: self._toggle_enhance_popup(self.enhance_button))
-        main_layout.addWidget(self.enhance_button)
-
-        # === Section Rotation ===
-        rot_group = QGroupBox("Rotation")
-        rot_layout = QHBoxLayout()
-        rot_layout.setContentsMargins(10, 10, 10, 10)
+        # Bloc Orientation
+        rot_group = QFrame()
+        rot_layout = QVBoxLayout()
+        rot_layout.setContentsMargins(12, 10, 12, 10)
         rot_layout.setSpacing(8)
-
+        rot_title = QLabel("Orientation / Miroir")
+        rot_layout.addWidget(rot_title)
+        rot_buttons = QHBoxLayout()
+        rot_buttons.setSpacing(6)
         btn_cw = QPushButton("↻ 90°")
         btn_cw.clicked.connect(lambda: self._rotate_image_unified(90))
-        rot_layout.addWidget(btn_cw)
-
+        rot_buttons.addWidget(btn_cw)
         btn_ccw = QPushButton("↺ 90°")
         btn_ccw.clicked.connect(lambda: self._rotate_image_unified(-90))
-        rot_layout.addWidget(btn_ccw)
-
+        rot_buttons.addWidget(btn_ccw)
         btn_reset = QPushButton("Reset")
         btn_reset.clicked.connect(self._reset_rotation_unified)
-        rot_layout.addWidget(btn_reset)
-
+        rot_buttons.addWidget(btn_reset)
         btn_flip_h = QPushButton("Flip H")
         btn_flip_h.clicked.connect(lambda: self._flip_image_unified(axis="h"))
-        rot_layout.addWidget(btn_flip_h)
-
+        rot_buttons.addWidget(btn_flip_h)
         btn_flip_v = QPushButton("Flip V")
         btn_flip_v.clicked.connect(lambda: self._flip_image_unified(axis="v"))
-        rot_layout.addWidget(btn_flip_v)
-
+        rot_buttons.addWidget(btn_flip_v)
+        rot_layout.addLayout(rot_buttons)
         rot_group.setLayout(rot_layout)
-        main_layout.addWidget(rot_group)
+        row.addWidget(rot_group, 1)
 
-        main_layout.addStretch()
+        # Bloc Actions
+        actions_group = QFrame()
+        actions_layout = QVBoxLayout()
+        actions_layout.setContentsMargins(12, 10, 12, 10)
+        actions_layout.setSpacing(8)
+        act_title = QLabel("Actions image")
+        actions_layout.addWidget(act_title)
+        reset_img_btn = QPushButton("Réinitialiser image")
+        reset_img_btn.setToolTip("Restaurer l'image originale (annule resample, rotation, améliorations)")
+        reset_img_btn.clicked.connect(self._reset_image_unified)
+        actions_layout.addWidget(reset_img_btn)
+        export_img_btn = QPushButton("Exporter JPG")
+        export_img_btn.setToolTip("Exporter l'image avec tous les réglages appliqués")
+        export_img_btn.clicked.connect(self._export_image_unified)
+        actions_layout.addWidget(export_img_btn)
+        actions_group.setLayout(actions_layout)
+        row.addWidget(actions_group, 1)
+
+        main_layout.addLayout(row)
         widget.setLayout(main_layout)
         return widget
 
@@ -1166,7 +1137,7 @@ class ComparisonView(QWidget):
             layout.setContentsMargins(0, 0, 0, 0)
             layout.addWidget(self.adjust_widget)
             self.adjust_popup.setLayout(layout)
-            self.adjust_popup.setFixedWidth(340)
+            self.adjust_popup.setFixedWidth(520)
         # Positionner sous le bouton Ajustements
         btn = self.adjust_button
         if btn:
@@ -1206,25 +1177,6 @@ class ComparisonView(QWidget):
             self.overlay_popup.move(global_pos)
         self.overlay_slider.setValue(int(self.overlay_alpha * 100))
         self.overlay_popup.show()
-
-    def _show_enhance_popup(self, anchor_btn: QPushButton):
-        """Affiche la popup d'amélioration sous le bouton."""
-        if not self.enhance_popup:
-            return
-        global_pos = anchor_btn.mapToGlobal(anchor_btn.rect().bottomLeft())
-        self.enhance_popup.move(global_pos)
-        self.enhance_popup.show()
-
-    def _toggle_enhance_popup(self, anchor_btn: QPushButton):
-        """Affiche ou ferme la popup d'améliorations."""
-        if not self.enhance_popup:
-            return
-        if self.enhance_popup.isVisible():
-            self.enhance_popup.hide()
-        else:
-            global_pos = anchor_btn.mapToGlobal(anchor_btn.rect().bottomLeft())
-            self.enhance_popup.move(global_pos)
-            self.enhance_popup.show()
 
     def _sync_controls_to_side(self):
         """Synchronise les contrôles avec l'état du côté actif."""

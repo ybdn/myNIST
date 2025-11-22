@@ -28,6 +28,8 @@ Visualiseur/editeur avec interface 3 panneaux pour fichiers ANSI/NIST-ITL. myNIS
 - Support des records clefs : Type-2 texte, empreintes Type-4/13/14/15, images Type-10/17, autres images (Type-7/8/16/19/20).
 - **Comparaison cote a cote** : chargez deux sources (NIST, image, PDF) pour les comparer visuellement.
   - Annotations typées et numérotées (MATCH/EXCLUSION/MINUTIA/CUSTOM) + compteur par type, suppression au clic.
+  - Mode overlay (superposition) avec transparence réglable, et blink comparator (alternance rapide G/D).
+  - Grille/règle calibrée et flip horizontal/vertical pour recaler visuellement.
   - Mesure de distance : mode mesure bi-clic (px et mm si calibré), effacement rapide.
   - Vues liées : zoom/pan synchronisés (checkbox "Lier les vues"), rotation 90/180/reset par image.
   - Calibration DPI : selectionnez 2 points + distance en mm pour determiner la resolution, puis resample au DPI cible.
