@@ -173,6 +173,13 @@ class MainWindow(QMainWindow):
 
         header_layout.addSpacing(Spacing.LG)
 
+        # Save button
+        self.viewer_save_btn = QPushButton("Sauvegarder")
+        self.viewer_save_btn.setCursor(Qt.PointingHandCursor)
+        self.viewer_save_btn.clicked.connect(self.save_file)
+        self.viewer_save_btn.setEnabled(False)
+        header_layout.addWidget(self.viewer_save_btn)
+
         # Import button
         import_btn = QPushButton("Importer")
         import_btn.setCursor(Qt.PointingHandCursor)
@@ -442,9 +449,11 @@ class MainWindow(QMainWindow):
         self.save_action.setEnabled(file_open and self.is_modified)
         self.undo_action.setEnabled(self.last_change is not None)
         self.nav_compare_action.setEnabled(True)
-        # Viewer close button
+        # Viewer close and save buttons
         if hasattr(self, 'viewer_close_btn'):
             self.viewer_close_btn.setEnabled(file_open)
+        if hasattr(self, 'viewer_save_btn'):
+            self.viewer_save_btn.setEnabled(file_open and self.is_modified)
 
     def close_current_file(self, show_message: bool = True):
         """Close and clear the currently loaded NIST file."""
@@ -873,6 +882,32 @@ class MainWindow(QMainWindow):
         self._refresh_title()
         self.status_bar.showMessage("Dernier changement annulé", 3000)
 
+    def save_file(self):
+        """Save current file to its original path."""
+        if not self.file_controller.is_file_open():
+            QMessageBox.information(self, "Aucun fichier", "Ouvrez un fichier avant d'enregistrer.")
+            return
+
+        current_path = self.file_controller.current_filepath
+        if not current_path:
+            # Fall back to save as if no path available
+            self.save_file_as()
+            return
+
+        current_file = self.file_controller.get_current_file()
+        if not current_file:
+            return
+
+        success = current_file.export(current_path)
+        if success:
+            self.is_modified = False
+            self.last_change = None
+            self._refresh_title()
+            self.update_actions_state(True)
+            self.status_bar.showMessage(f"Sauvegardé: {current_path}", 4000)
+        else:
+            QMessageBox.critical(self, "Erreur", "Impossible de sauvegarder le fichier.")
+
     def save_file_as(self):
         """Save current file to a new path."""
         if not self.file_controller.is_file_open():
@@ -897,6 +932,7 @@ class MainWindow(QMainWindow):
             self.is_modified = False
             self.last_change = None
             self._refresh_title()
+            self.update_actions_state(True)
             self.status_bar.showMessage(f"Enregistré: {output_path}", 4000)
             self.recent_files.add(output_path, last_mode="viewer", summary_types=current_file.get_record_types())
             self.refresh_recent_entries()

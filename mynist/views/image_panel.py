@@ -40,7 +40,7 @@ class ImagePanel(QWidget):
         # Image label
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.image_label.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc;")
+        self.image_label.setStyleSheet("background-color: #000000; border: 1px solid #333; color: #888;")
         self.image_label.setMinimumSize(400, 400)
         self.image_label.setText("Aucune image à afficher")
 
