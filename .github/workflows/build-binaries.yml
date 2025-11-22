@@ -33,9 +33,9 @@ jobs:
                   pip install -r requirements.txt
                   pip install pyinstaller
 
-            - name: Build NBIS (WSQ decoder)
-              continue-on-error: true
+            - name: Build NBIS (WSQ decoder - REQUIRED)
               run: |
+                  set -e
                   sudo apt-get update
                   sudo apt-get install -y build-essential libpng-dev zlib1g-dev
 
@@ -59,8 +59,13 @@ jobs:
                   cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || \
                       find nbis-src -name "dwsq" -type f -executable -exec cp {} nbis/bin/ \; 2>/dev/null || true
 
-                  echo "=== NBIS Build Result ==="
-                  ls -la nbis/bin/ 2>/dev/null || echo "No NBIS binaries (WSQ via Python fallback)"
+                  # VERIFY: dwsq must exist
+                  if [ ! -f nbis/bin/dwsq ]; then
+                      echo "ERROR: dwsq binary not found - NBIS build failed"
+                      exit 1
+                  fi
+                  echo "✓ NBIS dwsq built successfully"
+                  file nbis/bin/dwsq
 
             - name: Build application
               run: pyinstaller nist-studio.spec
@@ -111,10 +116,10 @@ jobs:
                       make
                       git
 
-            - name: Build NBIS (WSQ decoder)
-              continue-on-error: true
+            - name: Build NBIS (WSQ decoder - REQUIRED)
               shell: msys2 {0}
               run: |
+                  set -e
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
                   cd nbis-src
 
@@ -136,8 +141,13 @@ jobs:
                       find nbis-src -name "dwsq.exe" -type f -exec cp {} nbis/bin/ \; 2>/dev/null || \
                       find nbis-src -name "dwsq" -type f -exec cp {} nbis/bin/dwsq.exe \; 2>/dev/null || true
 
-                  echo "=== NBIS Build Result ==="
-                  ls -la nbis/bin/ 2>/dev/null || echo "No NBIS binaries (WSQ via Python fallback)"
+                  # VERIFY: dwsq.exe must exist
+                  if [ ! -f nbis/bin/dwsq.exe ]; then
+                      echo "ERROR: dwsq.exe binary not found - NBIS build failed"
+                      exit 1
+                  fi
+                  echo "✓ NBIS dwsq.exe built successfully"
+                  file nbis/bin/dwsq.exe
 
             - name: Generate Windows icon
               run: |
@@ -207,8 +217,7 @@ jobs:
                   pip install -r requirements.txt
                   pip install pyinstaller
 
-            - name: Build NBIS (WSQ decoder - REQUIRED for macOS)
-              id: nbis
+            - name: Build NBIS (WSQ decoder - REQUIRED)
               run: |
                   set -e
                   brew install libpng
@@ -241,16 +250,13 @@ jobs:
                       find nbis-src -name "dwsq" -type f -perm +111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
                   fi
 
-                  # Verify dwsq exists (critical for macOS - Python wsq crashes on ARM64)
-                  if [ -f nbis/bin/dwsq ]; then
-                      echo "nbis_available=true" >> $GITHUB_OUTPUT
-                      echo "✓ NBIS dwsq built successfully"
-                      file nbis/bin/dwsq
-                  else
-                      echo "nbis_available=false" >> $GITHUB_OUTPUT
-                      echo "✗ NBIS dwsq not found - WSQ images will show error on macOS"
-                      # Don't fail the build, the app handles missing dwsq gracefully
+                  # VERIFY: dwsq must exist (critical - Python wsq crashes on ARM64)
+                  if [ ! -f nbis/bin/dwsq ]; then
+                      echo "ERROR: dwsq binary not found - NBIS build failed"
+                      exit 1
                   fi
+                  echo "✓ NBIS dwsq built successfully"
+                  file nbis/bin/dwsq
 
             - name: Generate macOS icon (.icns)
               run: |
