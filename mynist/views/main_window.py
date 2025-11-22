@@ -96,6 +96,8 @@ class MainWindow(QMainWindow):
         self.pdf_view.back_requested.connect(self.switch_to_home)
         self.pdf_view.browse_requested.connect(self.export_pdf_report)
         self.pdf_view.export_requested.connect(self.export_pdf_report_with_path)
+        self.pdf_view.import_requested.connect(self.open_file)
+        self.pdf_view.close_requested.connect(self.close_current_file)
         self.image2nist_view.back_requested.connect(self.switch_to_home)
         self.comparison_view.back_requested.connect(self.switch_to_home)
 
@@ -168,6 +170,21 @@ class MainWindow(QMainWindow):
         self.viewer_file_label = QLabel("Aucun fichier")
         self.viewer_file_label.setObjectName("viewerFileLabel")
         header_layout.addWidget(self.viewer_file_label)
+
+        header_layout.addSpacing(Spacing.LG)
+
+        # Import button
+        import_btn = QPushButton("Importer")
+        import_btn.setCursor(Qt.PointingHandCursor)
+        import_btn.clicked.connect(self.open_file)
+        header_layout.addWidget(import_btn)
+
+        # Close button
+        self.viewer_close_btn = QPushButton("Fermer")
+        self.viewer_close_btn.setCursor(Qt.PointingHandCursor)
+        self.viewer_close_btn.clicked.connect(self.close_current_file)
+        self.viewer_close_btn.setEnabled(False)
+        header_layout.addWidget(self.viewer_close_btn)
 
         header.setLayout(header_layout)
         layout.addWidget(header)
@@ -418,13 +435,16 @@ class MainWindow(QMainWindow):
         """Enable or disable actions based on whether a file is loaded."""
         self.close_action.setEnabled(file_open)
         self.export_signa_action.setEnabled(file_open)
-        self.nav_viewer_action.setEnabled(file_open)
+        self.nav_viewer_action.setEnabled(True)  # Always accessible
         self.nav_pdf_action.setEnabled(file_open)
         self.resume_action.setEnabled(file_open)
         self.save_as_action.setEnabled(file_open)
         self.save_action.setEnabled(file_open and self.is_modified)
         self.undo_action.setEnabled(self.last_change is not None)
         self.nav_compare_action.setEnabled(True)
+        # Viewer close button
+        if hasattr(self, 'viewer_close_btn'):
+            self.viewer_close_btn.setEnabled(file_open)
 
     def close_current_file(self, show_message: bool = True):
         """Close and clear the currently loaded NIST file."""
@@ -442,12 +462,12 @@ class MainWindow(QMainWindow):
         self.update_actions_state(False)
         self.home_view.set_current_file(None)
         self._update_viewer_file_label(None)
-        self.switch_to_home()
+        self.pdf_view.set_current_file(None)
         self.is_modified = False
         self.last_change = None
 
         if show_message:
-            self.status_bar.showMessage("Closed current NIST file", 4000)
+            self.status_bar.showMessage("Fichier ferme", 4000)
 
     def _update_viewer_file_label(self, path: str = None):
         """Update the file label in viewer header."""
@@ -742,10 +762,7 @@ class MainWindow(QMainWindow):
     def on_mode_requested(self, mode: str):
         """Handle mode card selection from HomeView."""
         if mode == "viewer":
-            if self.file_controller.is_file_open():
-                self.switch_to_viewer()
-            else:
-                self.open_file()
+            self.switch_to_viewer()
         elif mode == "comparison":
             self.switch_to_comparison()
         elif mode == "pdf":

@@ -23,6 +23,8 @@ class PdfExportView(QWidget):
     browse_requested = pyqtSignal()
     export_requested = pyqtSignal(str)
     back_requested = pyqtSignal()
+    import_requested = pyqtSignal()
+    close_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -69,6 +71,7 @@ class PdfExportView(QWidget):
         self.export_btn = QPushButton("Exporter le PDF")
         self.export_btn.setCursor(Qt.PointingHandCursor)
         self.export_btn.setMinimumWidth(200)
+        self.export_btn.setEnabled(False)  # Disabled until a file is loaded
         self.export_btn.setStyleSheet(f"""
             QPushButton {{
                 font-weight: {Typography.WEIGHT_SEMIBOLD};
@@ -136,10 +139,18 @@ class PdfExportView(QWidget):
 
         header.addStretch()
 
-        # Spacer to balance the back button
-        spacer = QWidget()
-        spacer.setFixedWidth(120)
-        header.addWidget(spacer)
+        # Import button
+        import_btn = QPushButton("Importer")
+        import_btn.setCursor(Qt.PointingHandCursor)
+        import_btn.clicked.connect(self.import_requested.emit)
+        header.addWidget(import_btn)
+
+        # Close button
+        self.close_btn = QPushButton("Fermer")
+        self.close_btn.setCursor(Qt.PointingHandCursor)
+        self.close_btn.clicked.connect(self.close_requested.emit)
+        self.close_btn.setEnabled(False)
+        header.addWidget(self.close_btn)
 
         return header
 
@@ -267,6 +278,10 @@ class PdfExportView(QWidget):
             # Suggest output path
             suggested = str(Path(path).with_suffix(".pdf"))
             self.output_input.setText(suggested)
+            self.close_btn.setEnabled(True)
+            self.export_btn.setEnabled(True)
         else:
             self.source_label.setText("Aucun fichier NIST charge")
             self.output_input.clear()
+            self.close_btn.setEnabled(False)
+            self.export_btn.setEnabled(False)

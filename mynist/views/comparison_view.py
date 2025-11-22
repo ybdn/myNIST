@@ -48,6 +48,7 @@ from mynist.models.nist_file import NISTFile
 from mynist.utils.image_tools import locate_image_payload, detect_image_format, exif_transpose
 from mynist.utils.image_codecs import decode_wsq, decode_jpeg2000
 from mynist.utils.biometric_labels import get_short_label_fr
+from mynist.utils.design_tokens import load_svg_icon
 
 
 # Constantes pour les annotations typées
@@ -2043,7 +2044,7 @@ class ComparisonView(QWidget):
             action.setIcon(self._icon_cache[name])
             return
         if path.exists():
-            icon = QIcon(str(path))
+            icon = load_svg_icon(path, size=24)
             self._icon_cache[name] = icon
             action.setIcon(icon)
 
@@ -2054,7 +2055,7 @@ class ComparisonView(QWidget):
             button.setIcon(self._icon_cache[name])
             return
         if path.exists():
-            icon = QIcon(str(path))
+            icon = load_svg_icon(path, size=24)
             self._icon_cache[name] = icon
             button.setIcon(icon)
 
