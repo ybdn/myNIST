@@ -1,10 +1,10 @@
 name: Build & Release NIST Studio
 
 on:
-    workflow_dispatch: # lancement manuel
+    workflow_dispatch:
     push:
         tags:
-            - "v*" # ex: v0.1.0 → build auto sur tag
+            - "v*"
 
 jobs:
     build:
@@ -40,35 +40,27 @@ jobs:
                   sudo apt-get update
                   sudo apt-get install -y build-essential libpng-dev zlib1g-dev
 
-                  # Download NBIS source
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
 
-                  # Build with native NBIS build system
                   cd nbis-src
                   mkdir -p install
                   chmod +x setup.sh
 
-                  # Fix GCC 10+ compatibility (multiple definition error)
                   export CFLAGS="-fcommon -O2"
                   export CDEFS="-D__NBISLE__ -fcommon"
 
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
                   make config
-
-                  # Patch the generated rules to add -fcommon
                   sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
-
                   make -j$(nproc) it
                   make install
 
-                  # Copy binaries
                   cd ..
                   mkdir -p nbis/bin
                   cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/cwsq nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/nfiq nbis/bin/ 2>/dev/null || true
 
-                  # Fallback: find binaries if not in install dir
                   if [ ! -f nbis/bin/dwsq ]; then
                     find nbis-src -name "dwsq" -type f -perm /111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
                   fi
@@ -84,35 +76,27 @@ jobs:
                   set -e
                   brew install libpng
 
-                  # Download NBIS source
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
 
-                  # Build with native NBIS build system
                   cd nbis-src
                   mkdir -p install
                   chmod +x setup.sh
 
-                  # Fix GCC/Clang compatibility
                   export CFLAGS="-fcommon -O2"
                   export CDEFS="-D__NBISLE__ -fcommon"
 
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
                   make config
-
-                  # Patch the generated rules to add -fcommon (macOS sed syntax)
                   sed -i '' 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
-
                   make -j$(sysctl -n hw.ncpu) it
                   make install
 
-                  # Copy binaries
                   cd ..
                   mkdir -p nbis/bin
                   cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/cwsq nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/nfiq nbis/bin/ 2>/dev/null || true
 
-                  # Fallback: find binaries if not in install dir
                   if [ ! -f nbis/bin/dwsq ]; then
                     find nbis-src -name "dwsq" -type f -perm /111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
                   fi
@@ -140,35 +124,27 @@ jobs:
               run: |
                   set -e
 
-                  # Download NBIS source
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
 
-                  # Build with native NBIS build system
                   cd nbis-src
                   mkdir -p install
                   chmod +x setup.sh
 
-                  # Fix GCC compatibility
                   export CFLAGS="-fcommon -O2"
                   export CDEFS="-D__NBISLE__ -fcommon"
 
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
                   make config
-
-                  # Patch the generated rules to add -fcommon
                   sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
-
                   make -j$(nproc) it
                   make install
 
-                  # Copy binaries
                   cd ..
                   mkdir -p nbis/bin
                   cp nbis-src/install/bin/dwsq.exe nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/cwsq.exe nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/nfiq.exe nbis/bin/ 2>/dev/null || true
 
-                  # Fallback: find binaries
                   if [ ! -f nbis/bin/dwsq.exe ]; then
                     find nbis-src -name "dwsq.exe" -type f -exec cp {} nbis/bin/ \; 2>/dev/null || true
                     find nbis-src -name "dwsq" -type f -exec cp {} nbis/bin/dwsq.exe \; 2>/dev/null || true
@@ -177,7 +153,7 @@ jobs:
                   echo "NBIS build completed"
                   ls -la nbis/bin/ || echo "No binaries found"
 
-            # Generate proper multi-resolution ICO on Windows
+            # Generate icons
             - name: Generate Windows icon
               if: runner.os == 'Windows'
               run: |
@@ -211,18 +187,14 @@ jobs:
                   print('Generated multi-resolution ICO: appicon-nist-studio.ico')
                   "
 
-            # Generate ICNS for macOS dock icon
             - name: Generate macOS icon
               if: runner.os == 'macOS'
               run: |
-                  # Create iconset directory
                   mkdir -p mynist/resources/icons/AppIcon.iconset
 
-                  # Copy/resize icons to iconset with required naming
                   icon_dir="mynist/resources/icons"
                   iconset="$icon_dir/AppIcon.iconset"
 
-                  # Use sips to create all required sizes
                   sips -z 16 16     "$icon_dir/appicon-nist-studio-16.png" --out "$iconset/icon_16x16.png"
                   sips -z 32 32     "$icon_dir/appicon-nist-studio-32.png" --out "$iconset/icon_16x16@2x.png"
                   sips -z 32 32     "$icon_dir/appicon-nist-studio-32.png" --out "$iconset/icon_32x32.png"
@@ -234,7 +206,6 @@ jobs:
                   sips -z 512 512   "$icon_dir/appicon-nist-studio-512.png" --out "$iconset/icon_512x512.png"
                   sips -z 1024 1024 "$icon_dir/appicon-nist-studio-512.png" --out "$iconset/icon_512x512@2x.png"
 
-                  # Convert iconset to icns
                   iconutil -c icns "$iconset" -o "$icon_dir/appicon-nist-studio.icns"
 
                   echo "Generated macOS icon: appicon-nist-studio.icns"
@@ -243,32 +214,44 @@ jobs:
               run: |
                   pyinstaller nist-studio.spec
 
-            # Création du dossier release + renommage selon l'OS
-            - name: Prepare release files (Linux/macOS)
-              if: runner.os != 'Windows'
+            # Create distribution archives (onefolder mode)
+            - name: Create archive (Linux)
+              if: runner.os == 'Linux'
               run: |
                   mkdir -p release
-                  if [ "${{ runner.os }}" = "macOS" ]; then
-                    mv dist/nist-studio release/nist-studio-macos
-                  else
-                    mv dist/nist-studio release/nist-studio-linux
-                  fi
+                  cd dist
+                  tar -czvf ../release/NIST-Studio-linux.tar.gz NIST-Studio
+                  cd ..
+                  echo "Created NIST-Studio-linux.tar.gz"
+                  ls -lh release/
 
-            - name: Prepare release files (Windows)
+            - name: Create archive (macOS)
+              if: runner.os == 'macOS'
+              run: |
+                  mkdir -p release
+                  cd dist
+                  tar -czvf ../release/NIST-Studio-macos.tar.gz NIST-Studio
+                  cd ..
+                  echo "Created NIST-Studio-macos.tar.gz"
+                  ls -lh release/
+
+            - name: Create archive (Windows)
               if: runner.os == 'Windows'
-              shell: bash
+              shell: pwsh
               run: |
-                  mkdir -p release
-                  mv dist/nist-studio.exe release/nist-studio-windows.exe
+                  New-Item -ItemType Directory -Force -Path release
+                  Compress-Archive -Path "dist\NIST-Studio" -DestinationPath "release\NIST-Studio-windows.zip"
+                  Write-Host "Created NIST-Studio-windows.zip"
+                  Get-ChildItem release
 
-            # Artefacts visibles dans l'onglet Actions
+            # Upload artifacts
             - name: Upload artifact
               uses: actions/upload-artifact@v4
               with:
                   name: nist-studio-${{ matrix.os }}
                   path: release/
 
-            # Upload automatique des binaires dans la Release si tag
+            # Auto-release on tag
             - name: Create or update GitHub Release
               if: startsWith(github.ref, 'refs/tags/')
               uses: softprops/action-gh-release@v2
