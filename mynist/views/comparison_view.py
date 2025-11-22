@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict
 import io
 
-from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QSize
+from PyQt5.QtCore import Qt, QRectF, pyqtSignal, QSize, QTimer, QPointF
 from PyQt5.QtGui import QPixmap, QImage, QPen, QBrush, QColor, QPainter, QIcon
 from PyQt5.QtWidgets import (
     QWidget,
@@ -26,6 +26,7 @@ from PyQt5.QtWidgets import (
     QGraphicsEllipseItem,
     QGraphicsLineItem,
     QGraphicsSimpleTextItem,
+    QGraphicsPixmapItem,
     QToolBar,
     QToolButton,
     QMenu,
@@ -39,6 +40,7 @@ from PyQt5.QtWidgets import (
     QRadioButton,
     QButtonGroup,
     QSizePolicy,
+    QDialog,
 )
 from PIL import Image, ImageEnhance, ImageOps
 
@@ -61,6 +63,8 @@ ANNOTATION_TYPES = {
 # Constantes pour les points de calibration
 CALIBRATION_COLOR = QColor(0, 128, 255)  # Bleu
 CALIBRATION_RADIUS = 6
+PAN_MARGIN = 500  # marge pour autoriser un pan plus libre autour de l'image
+BACKGROUND_TOLERANCE = 25  # tolérance pour la suppression d'arrière-plan
 
 
 class AnnotationPoint(QGraphicsEllipseItem):
@@ -497,11 +501,25 @@ class ComparisonView(QWidget):
         self.views_linked = False
         self._syncing_pan = False
         self._pan_link_offset = {"h": 0, "v": 0}
-        self.module_frame = None
+        self.module_frame = None  # conservé pour compat mais non utilisé (popup)
+        self.adjust_popup: Optional[QDialog] = None
         self._icon_cache: Dict[str, QIcon] = {}
 
         # Côté actif pour les ajustements (toggle unique)
         self.active_adjustment_side = "left"
+        self._pre_overlay_side = "left"
+        self.overlay_enabled = False
+        self.overlay_alpha = 0.5
+        self.overlay_items = {"left": None}
+        self.overlay_popup: Optional[QDialog] = None
+        self.adjust_button: Optional[QToolButton] = None
+        self._adjust_parent = None
+        self.grid_enabled = False
+        self.grid_items = {"left": [], "right": []}
+        self.blink_timer = QTimer(self)
+        self.blink_timer.setInterval(600)
+        self.blink_timer.timeout.connect(self._blink_tick)
+        self._blink_state = True
 
         self._build_ui()
         self._connect_signals()
@@ -601,17 +619,13 @@ class ComparisonView(QWidget):
         self.right_nist_nav = self._build_nist_nav("right")
         right_image_col.addWidget(self.right_nist_nav)
 
-        # Module calibrate/resample + amélioration à droite de l'image (unifié)
-        self.module_frame = QWidget()
-        self.module_frame.setMinimumWidth(280)
-        mod_layout = QVBoxLayout()
-        mod_layout.setContentsMargins(6, 6, 6, 6)
-        mod_layout.setSpacing(8)
-        mod_layout.addWidget(self._build_unified_panel())
-        self.module_frame.setLayout(mod_layout)
+        self.right_image_container = QWidget()
+        self.right_image_container.setLayout(right_image_col)
 
-        right_inner.addLayout(right_image_col, 4)
-        right_inner.addWidget(self.module_frame, 1)
+        # Module calibrate/resample + amélioration (désormais popup)
+        self.adjust_widget = self._build_unified_panel()
+
+        right_inner.addWidget(self.right_image_container, 5)
 
         main_row.addLayout(right_inner, 5)
 
@@ -695,6 +709,36 @@ class ComparisonView(QWidget):
         self._set_icon(self.visibility_action, "visibility")
         toolbar.addAction(self.visibility_action)
 
+        self.grid_action = QAction("Grille", self)
+        self.grid_action.setCheckable(True)
+        self.grid_action.setToolTip("Afficher une grille calibrée")
+        self.grid_action.toggled.connect(self._on_grid_toggled)
+        toolbar.addAction(self.grid_action)
+
+        self.overlay_action = QAction("Overlay", self)
+        self.overlay_action.setCheckable(True)
+        self.overlay_action.setToolTip("Superposer droite sur gauche avec transparence")
+        self.overlay_action.toggled.connect(self._on_overlay_toggled)
+        self._set_icon(self.overlay_action, "overlay")
+        self.overlay_button = QToolButton()
+        self.overlay_button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.overlay_button.setDefaultAction(self.overlay_action)
+        self.overlay_button.clicked.connect(self._on_overlay_button_clicked)
+        toolbar.addWidget(self.overlay_button)
+
+        # Slider overlay (popup, pas dans la toolbar)
+        self.overlay_slider = QSlider(Qt.Horizontal)
+        self.overlay_slider.setRange(0, 100)
+        self.overlay_slider.setValue(int(self.overlay_alpha * 100))
+        self.overlay_slider.setFixedWidth(140)
+        self.overlay_slider.valueChanged.connect(self._on_overlay_alpha_changed)
+
+        self.blink_action = QAction("Blink", self)
+        self.blink_action.setCheckable(True)
+        self.blink_action.setToolTip("Alterner gauche/droite rapidement")
+        self.blink_action.toggled.connect(self._on_blink_toggled)
+        toolbar.addAction(self.blink_action)
+
         toolbar.addSeparator()
 
         # ═══════════════════════════════════════════════════════════════════
@@ -772,7 +816,10 @@ class ComparisonView(QWidget):
         self.toggle_side_panel_action.setToolTip("Afficher/masquer Calibration, Resample et Amélioration d'image")
         self._set_icon(self.toggle_side_panel_action, "photo_cog")
         self.toggle_side_panel_action.toggled.connect(self._on_toggle_side_panel)
-        toolbar.addAction(self.toggle_side_panel_action)
+        self.adjust_button = QToolButton()
+        self.adjust_button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.adjust_button.setDefaultAction(self.toggle_side_panel_action)
+        toolbar.addWidget(self.adjust_button)
 
         layout.addWidget(toolbar)
 
@@ -915,9 +962,15 @@ class ComparisonView(QWidget):
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(12)
 
+        # Libellé spécial overlay
+        self.overlay_mode_label = QLabel("Modification du calque")
+        self.overlay_mode_label.setStyleSheet("font-weight: bold;")
+        self.overlay_mode_label.setVisible(False)
+        main_layout.addWidget(self.overlay_mode_label)
+
         # === Toggle switch pour sélectionner le côté ===
-        toggle_frame = QFrame()
-        toggle_frame.setStyleSheet("""
+        self.toggle_frame = QFrame()
+        self.toggle_frame.setStyleSheet("""
             QFrame {
                 background: rgba(59, 130, 246, 0.08);
                 border-radius: 8px;
@@ -941,8 +994,8 @@ class ComparisonView(QWidget):
         toggle_layout.addWidget(self.left_radio)
         toggle_layout.addWidget(self.right_radio)
         toggle_layout.addStretch()
-        toggle_frame.setLayout(toggle_layout)
-        main_layout.addWidget(toggle_frame)
+        self.toggle_frame.setLayout(toggle_layout)
+        main_layout.addWidget(self.toggle_frame)
 
         # === Section Calibration / Resample ===
         calib_group = QGroupBox("Calibration / Rééchantillonnage")
@@ -995,8 +1048,8 @@ class ComparisonView(QWidget):
         calib_group.setLayout(calib_layout)
         main_layout.addWidget(calib_group)
 
-        # === Section Amélioration ===
-        enhance_group = QGroupBox("Amélioration d'image")
+        # === Section Amélioration (popup) ===
+        enhance_container = QWidget()
         enhance_layout = QVBoxLayout()
         enhance_layout.setContentsMargins(10, 10, 10, 10)
         enhance_layout.setSpacing(6)
@@ -1034,13 +1087,32 @@ class ComparisonView(QWidget):
         self.unified_invert.clicked.connect(self._on_unified_enhancement_changed)
         enhance_layout.addWidget(self.unified_invert)
 
+        # Effacer arrière-plan (overlay)
+        self.bg_remove_btn = QPushButton("Effacer l'arrière-plan")
+        self.bg_remove_btn.setToolTip("Rend transparent le fond uni du calque (overlay)")
+        self.bg_remove_btn.clicked.connect(self._remove_background_unified)
+        self.bg_remove_btn.setEnabled(False)
+        enhance_layout.addWidget(self.bg_remove_btn)
+
         # Reset
         reset_btn = QPushButton("Réinitialiser")
         reset_btn.clicked.connect(self._reset_enhancements_unified)
         enhance_layout.addWidget(reset_btn)
 
-        enhance_group.setLayout(enhance_layout)
-        main_layout.addWidget(enhance_group)
+        enhance_container.setLayout(enhance_layout)
+
+        self.enhance_popup = QDialog(self)
+        self.enhance_popup.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        popup_layout = QVBoxLayout()
+        popup_layout.setContentsMargins(0, 0, 0, 0)
+        popup_layout.addWidget(enhance_container)
+        self.enhance_popup.setLayout(popup_layout)
+        self.enhance_popup.setFixedWidth(320)
+
+        self.enhance_button = QPushButton("Améliorations")
+        self.enhance_button.setToolTip("Ouvrir les réglages d'image (popup)")
+        self.enhance_button.clicked.connect(lambda: self._toggle_enhance_popup(self.enhance_button))
+        main_layout.addWidget(self.enhance_button)
 
         # === Section Rotation ===
         rot_group = QGroupBox("Rotation")
@@ -1060,6 +1132,14 @@ class ComparisonView(QWidget):
         btn_reset.clicked.connect(self._reset_rotation_unified)
         rot_layout.addWidget(btn_reset)
 
+        btn_flip_h = QPushButton("Flip H")
+        btn_flip_h.clicked.connect(lambda: self._flip_image_unified(axis="h"))
+        rot_layout.addWidget(btn_flip_h)
+
+        btn_flip_v = QPushButton("Flip V")
+        btn_flip_v.clicked.connect(lambda: self._flip_image_unified(axis="v"))
+        rot_layout.addWidget(btn_flip_v)
+
         rot_group.setLayout(rot_layout)
         main_layout.addWidget(rot_group)
 
@@ -1071,6 +1151,80 @@ class ComparisonView(QWidget):
         """Appelé quand le toggle gauche/droite change."""
         self.active_adjustment_side = "left" if button == self.left_radio else "right"
         self._sync_controls_to_side()
+
+    def _show_adjust_popup(self):
+        """Affiche le panneau d'ajustements (calibrate/resample/rotate/enhance) en flottant."""
+        parent = self.window() or self
+        if self.adjust_popup is None or self._adjust_parent != parent:
+            self._adjust_parent = parent
+            self.adjust_popup = QDialog(parent)
+            self.adjust_popup.setModal(False)
+            self.adjust_popup.setWindowModality(Qt.NonModal)
+            self.adjust_popup.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+            self.adjust_popup.setAttribute(Qt.WA_ShowWithoutActivating, True)
+            layout = QVBoxLayout()
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(self.adjust_widget)
+            self.adjust_popup.setLayout(layout)
+            self.adjust_popup.setFixedWidth(340)
+        # Positionner sous le bouton Ajustements
+        btn = self.adjust_button
+        if btn:
+            global_pos = btn.mapToGlobal(btn.rect().bottomLeft())
+            # Contraindre à la fenêtre principale
+            win_geo = parent.frameGeometry()
+            x = max(win_geo.left(), min(global_pos.x(), win_geo.right() - self.adjust_popup.width()))
+            y = max(win_geo.top(), min(global_pos.y(), win_geo.bottom() - self.adjust_popup.height()))
+            self.adjust_popup.move(x, y)
+        self.adjust_popup.show()
+
+    def _hide_adjust_popup(self):
+        if self.adjust_popup and self.adjust_popup.isVisible():
+            self.adjust_popup.hide()
+            # désynchroniser le toggle si fermeture manuelle
+            if self.toggle_side_panel_action.isChecked():
+                self.toggle_side_panel_action.blockSignals(True)
+                self.toggle_side_panel_action.setChecked(False)
+                self.toggle_side_panel_action.blockSignals(False)
+
+    def _show_overlay_slider_popup(self):
+        """Affiche un mini-panneau sous le bouton overlay avec la réglette, qui reste visible."""
+        if self.overlay_popup is None:
+            self.overlay_popup = QDialog(self)
+            self.overlay_popup.setModal(False)
+            self.overlay_popup.setWindowModality(Qt.NonModal)
+            self.overlay_popup.setWindowFlags(Qt.Tool | Qt.FramelessWindowHint)
+            self.overlay_popup.setAttribute(Qt.WA_ShowWithoutActivating, True)
+            layout = QVBoxLayout()
+            layout.setContentsMargins(6, 6, 6, 6)
+            layout.addWidget(self.overlay_slider)
+            self.overlay_popup.setLayout(layout)
+        # positionner sous le bouton overlay
+        btn = self.overlay_button
+        if btn:
+            global_pos = btn.mapToGlobal(btn.rect().bottomLeft())
+            self.overlay_popup.move(global_pos)
+        self.overlay_slider.setValue(int(self.overlay_alpha * 100))
+        self.overlay_popup.show()
+
+    def _show_enhance_popup(self, anchor_btn: QPushButton):
+        """Affiche la popup d'amélioration sous le bouton."""
+        if not self.enhance_popup:
+            return
+        global_pos = anchor_btn.mapToGlobal(anchor_btn.rect().bottomLeft())
+        self.enhance_popup.move(global_pos)
+        self.enhance_popup.show()
+
+    def _toggle_enhance_popup(self, anchor_btn: QPushButton):
+        """Affiche ou ferme la popup d'améliorations."""
+        if not self.enhance_popup:
+            return
+        if self.enhance_popup.isVisible():
+            self.enhance_popup.hide()
+        else:
+            global_pos = anchor_btn.mapToGlobal(anchor_btn.rect().bottomLeft())
+            self.enhance_popup.move(global_pos)
+            self.enhance_popup.show()
 
     def _sync_controls_to_side(self):
         """Synchronise les contrôles avec l'état du côté actif."""
@@ -1174,6 +1328,52 @@ class ComparisonView(QWidget):
         self.image_state[side]["enhancements"] = enh
         self._render_image(side)
 
+    def _remove_background_unified(self):
+        """Supprime un fond uni (le rend transparent) sur le côté actif."""
+        side = self.active_adjustment_side
+        state = self.image_state[side]
+        base_img = state.get("base_image")
+        if base_img is None:
+            QMessageBox.warning(self, "Effacer l'arrière-plan", "Aucune image chargée.")
+            return
+        cleaned = self._remove_background(base_img)
+        state["base_image"] = cleaned
+        self._render_image(side)
+
+    def _remove_background(self, img: Image.Image) -> Image.Image:
+        """Détecte un fond quasi uni (couleur dominante des coins) et le rend transparent."""
+        rgba = img.convert("RGBA")
+        w, h = rgba.size
+        if w == 0 or h == 0:
+            return rgba
+        sample = min(40, w, h)
+        coords = [
+            (0, 0),
+            (w - sample, 0),
+            (0, h - sample),
+            (w - sample, h - sample),
+        ]
+        pixels = []
+        for (x, y) in coords:
+            crop = rgba.crop((x, y, x + sample, y + sample))
+            pixels.extend(list(crop.getdata()))
+        if not pixels:
+            return rgba
+        avg = (
+            sum(p[0] for p in pixels) // len(pixels),
+            sum(p[1] for p in pixels) // len(pixels),
+            sum(p[2] for p in pixels) // len(pixels),
+        )
+        tol = BACKGROUND_TOLERANCE
+        new_data = []
+        for r, g, b, a in rgba.getdata():
+            if abs(r - avg[0]) <= tol and abs(g - avg[1]) <= tol and abs(b - avg[2]) <= tol:
+                new_data.append((r, g, b, 0))
+            else:
+                new_data.append((r, g, b, a))
+        rgba.putdata(new_data)
+        return rgba
+
     def _reset_enhancements_unified(self):
         """Réinitialise les améliorations pour le côté actif."""
         side = self.active_adjustment_side
@@ -1206,6 +1406,10 @@ class ComparisonView(QWidget):
     def _reset_rotation_unified(self):
         """Reset rotation pour le côté actif."""
         self._reset_rotation(self.active_adjustment_side)
+
+    def _flip_image_unified(self, axis: str):
+        """Flip horizontal/vertical pour le côté actif."""
+        self._flip_image(self.active_adjustment_side, axis=axis)
 
     def _export_image_unified(self):
         """Exporte l'image du côté actif avec tous les réglages appliqués."""
@@ -1447,8 +1651,24 @@ class ComparisonView(QWidget):
             return img
         return img.rotate(angle, expand=True, resample=Image.Resampling.BICUBIC)
 
+    def _get_processed_image(self, side: str) -> Optional[Image.Image]:
+        """Retourne l'image après rotation + améliorations pour le rendu/overlay."""
+        state = self.image_state[side]
+        base = state.get("base_image")
+        if base is None:
+            return None
+        rotated = self._apply_rotation(base, state.get("rotation", 0))
+        return self._apply_enhancements(rotated, state.get("enhancements", self._default_enhancements()))
+
     def _apply_enhancements(self, img: Image.Image, enh: Dict[str, float]) -> Image.Image:
-        result = img.convert("RGB")
+        """Applique luminosité/contraste/gamma/inversion en conservant l'alpha éventuel."""
+        had_alpha = img.mode == "RGBA"
+        alpha = None
+        if had_alpha:
+            rgb, alpha = img.convert("RGBA").split()[:3], img.getchannel("A")
+            result = Image.merge("RGB", rgb)
+        else:
+            result = img.convert("RGB")
 
         # Luminosité : map -100/100 vers facteur 0..2
         bright_factor = 1.0 + float(enh.get("brightness", 0.0)) / 100.0
@@ -1467,6 +1687,9 @@ class ComparisonView(QWidget):
         if enh.get("invert", False):
             result = ImageOps.invert(result)
 
+        if had_alpha and alpha is not None:
+            result = result.convert("RGBA")
+            result.putalpha(alpha)
         return result
 
     def _render_image(
@@ -1485,8 +1708,9 @@ class ComparisonView(QWidget):
         if measurements_meta is None:
             measurements_meta = view.get_measurement_meta()
 
-        rotated = self._apply_rotation(base, state.get("rotation", 0))
-        enhanced = self._apply_enhancements(rotated, state.get("enhancements", self._default_enhancements()))
+        enhanced = self._get_processed_image(side)
+        if enhanced is None:
+            return
         self._display_pil_image(side, enhanced, annotations_meta=annotations_meta, measurements_meta=measurements_meta)
 
     def _reset_enhancements(self, side: str):
@@ -1551,7 +1775,10 @@ class ComparisonView(QWidget):
                     text = self._measurement_text(side, math.hypot(end[0] - start[0], end[1] - start[1]))
                     view.add_measurement(start, end, text)
 
+        self._update_scene_rect(side, pix)
         self._fit_view_to_pixmap(view, pix)
+        self._refresh_overlay()
+        self._refresh_grid(side)
         self._update_annotation_count()
 
     # ─────────────────────────────────────────────────────────────────────
@@ -1567,6 +1794,98 @@ class ComparisonView(QWidget):
         if scene_rect.isValid():
             view.fitInView(scene_rect, Qt.KeepAspectRatio)
         view._zoom_factor = 1.0
+
+    def _update_scene_rect(self, side: str, pix: QPixmap):
+        """Élargit la scène pour permettre le pan au-delà des bords visibles."""
+        scene = self.left_scene if side == "left" else self.right_scene
+        if not scene or not pix or pix.isNull():
+            return
+        rect = QRectF(pix.rect()).adjusted(-PAN_MARGIN, -PAN_MARGIN, PAN_MARGIN, PAN_MARGIN)
+        scene.setSceneRect(rect)
+
+    def _refresh_overlay(self):
+        """Affiche/masque la superposition : image droite en calque sur la vue gauche uniquement."""
+        if not self.overlay_enabled:
+            self._clear_overlay_items()
+            return
+
+        # cacher la vue droite quand overlay actif
+        self.right_view.setVisible(False)
+        if self.right_image_container:
+            self.right_image_container.setVisible(False)
+
+        base_img = self._get_processed_image("left")
+        other_img = self._get_processed_image("right")
+        scene = self.left_scene
+        if base_img is None or other_img is None or scene is None:
+            return
+
+        overlay = ImageOps.contain(other_img, base_img.size).convert("RGBA")
+        ox = (base_img.width - overlay.width) // 2
+        oy = (base_img.height - overlay.height) // 2
+        pix = self._pil_to_pixmap(overlay)
+
+        # conserver le décalage de l'overlay si déjà déplacé par l'utilisateur
+        existing = self.overlay_items.get("left")
+        prev_pos = QPointF(ox, oy)
+        if existing:
+            prev_pos = existing.pos()
+            if existing.scene():
+                scene.removeItem(existing)
+
+        item: QGraphicsPixmapItem = scene.addPixmap(pix)
+        item.setPos(prev_pos)
+        item.setFlag(QGraphicsPixmapItem.ItemIsMovable, True)
+        item.setZValue(200)
+        item.setOpacity(self.overlay_alpha)
+        self.overlay_items["left"] = item
+
+    def _clear_grid(self, side: str):
+        items = self.grid_items.get(side, [])
+        scene = self.left_scene if side == "left" else self.right_scene
+        for it in items:
+            if scene and it.scene():
+                scene.removeItem(it)
+        self.grid_items[side] = []
+
+    def _refresh_grid(self, side: str):
+        """Dessine une grille simple si activée."""
+        self._clear_grid(side)
+        if not self.grid_enabled:
+            return
+        scene = self.left_scene if side == "left" else self.right_scene
+        pix_item = self.left_pixmap_item if side == "left" else self.right_pixmap_item
+        if not scene or pix_item is None:
+            return
+        rect = pix_item.boundingRect()
+        if rect.width() <= 0 or rect.height() <= 0:
+            return
+        dpi = self.image_state[side].get("dpi")
+        if dpi:
+            step = max(20, int(dpi * 10 / 25.4))  # grille ~1cm si calibré
+        else:
+            step = 100
+        pen = QPen(QColor(128, 128, 128, 120), 0.5, Qt.DashLine)
+        items = []
+        x = 0
+        while x <= rect.width():
+            line = scene.addLine(rect.left() + x, rect.top(), rect.left() + x, rect.top() + rect.height(), pen)
+            line.setZValue(190)
+            items.append(line)
+            x += step
+        y = 0
+        while y <= rect.height():
+            line = scene.addLine(rect.left(), rect.top() + y, rect.left() + rect.width(), rect.top() + y, pen)
+            line.setZValue(190)
+            items.append(line)
+            y += step
+        self.grid_items[side] = items
+
+    def _blink_tick(self):
+        self._blink_state = not self._blink_state
+        self.left_view.setVisible(self._blink_state)
+        self.right_view.setVisible(not self._blink_state)
+
 
     # ─────────────────────────────────────────────────────────────────────
     # Modes toolbar
@@ -1659,6 +1978,14 @@ class ComparisonView(QWidget):
         self.left_view.set_labels_visible(checked)
         self.right_view.set_labels_visible(checked)
 
+    def _on_overlay_button_clicked(self):
+        """Affiche le slider alpha quand on clique sur Overlay."""
+        if self.overlay_action.isChecked():
+            self._show_overlay_slider_popup()
+        else:
+            if self.overlay_popup:
+                self.overlay_popup.hide()
+
     def _on_measure_toggled(self, checked: bool):
         if checked:
             self.left_view.set_measurement_mode(True)
@@ -1689,10 +2016,11 @@ class ComparisonView(QWidget):
             self._syncing_pan = False
 
     def _on_toggle_side_panel(self, checked: bool):
-        """Affiche/masque le panneau latéral pour maximiser la zone image."""
-        if not self.module_frame:
-            return
-        self.module_frame.setVisible(checked)
+        """Affiche/masque le panneau d'ajustements en popup."""
+        if checked:
+            self._show_adjust_popup()
+        else:
+            self._hide_adjust_popup()
 
     def _icon_path(self, name: str) -> Path:
         icons_root = Path(__file__).parent.parent / "resources" / "icons"
@@ -1792,6 +2120,121 @@ class ComparisonView(QWidget):
     def _clear_measurements(self):
         self.left_view.clear_measurements()
         self.right_view.clear_measurements()
+
+    def _restore_checked_mode(self):
+        """Réapplique le mode actif (main/annotation/mesure) après interruption."""
+        if self.annotate_action.isChecked():
+            self._on_annotate_toggled(True)
+        elif self.measure_action.isChecked():
+            self._on_measure_toggled(True)
+        else:
+            self._on_pan_toggled(True)
+
+    def _clear_overlay_items(self):
+        """Retire les overlays éventuels."""
+        for key, item in list(self.overlay_items.items()):
+            if item:
+                scene = item.scene()
+                if scene:
+                    scene.removeItem(item)
+            self.overlay_items[key] = None
+
+    def _on_grid_toggled(self, checked: bool):
+        self.grid_enabled = checked
+        self._refresh_grid("left")
+        self._refresh_grid("right")
+
+    def _on_overlay_toggled(self, checked: bool):
+        self.overlay_enabled = checked
+        if checked:
+            self._pre_overlay_side = self.active_adjustment_side
+            # Forcer le panneau sur le calque (droite)
+            self.active_adjustment_side = "right"
+            self.overlay_mode_label.setVisible(True)
+            self.toggle_frame.setVisible(False)
+            # Align radios pour la sortie d'overlay
+            self.left_radio.blockSignals(True)
+            self.right_radio.blockSignals(True)
+            self.right_radio.setChecked(True)
+            self.left_radio.blockSignals(False)
+            self.right_radio.blockSignals(False)
+            self._sync_controls_to_side()
+            self.blink_action.setChecked(False)
+            self.right_image_container.setVisible(False)
+            self.right_view.setVisible(False)
+            self.left_view.setDragMode(QGraphicsView.NoDrag)
+            self.left_view.setCursor(Qt.SizeAllCursor)
+            self.left_view.viewport().setCursor(Qt.SizeAllCursor)
+            self._set_annotation_controls_enabled(False)
+            self.grid_action.setEnabled(False)
+        else:
+            self.overlay_mode_label.setVisible(False)
+            self.toggle_frame.setVisible(True)
+            # Restaurer le côté sélectionné avant overlay
+            self.active_adjustment_side = self._pre_overlay_side
+            self.left_radio.blockSignals(True)
+            self.right_radio.blockSignals(True)
+            if self.active_adjustment_side == "left":
+                self.left_radio.setChecked(True)
+            else:
+                self.right_radio.setChecked(True)
+            self.left_radio.blockSignals(False)
+            self.right_radio.blockSignals(False)
+            self._sync_controls_to_side()
+            self._clear_overlay_items()
+            if self.right_image_container:
+                self.right_image_container.setVisible(True)
+            self.right_view.setVisible(True)
+            self.left_view.setVisible(True)
+            self.grid_action.setEnabled(True)
+            self._restore_checked_mode()
+            # Réappliquer explicitement le curseur selon le mode actif
+            if self.pan_action.isChecked():
+                self.left_view.setCursor(Qt.OpenHandCursor)
+                self.left_view.viewport().setCursor(Qt.OpenHandCursor)
+                self.right_view.setCursor(Qt.OpenHandCursor)
+                self.right_view.viewport().setCursor(Qt.OpenHandCursor)
+            elif self.annotate_action.isChecked() or self.measure_action.isChecked():
+                self.left_view.setCursor(Qt.CrossCursor)
+                self.left_view.viewport().setCursor(Qt.CrossCursor)
+                self.right_view.setCursor(Qt.CrossCursor)
+                self.right_view.viewport().setCursor(Qt.CrossCursor)
+            # forcer un repaint pour éviter les résidus de superposition
+            self.left_view.viewport().update()
+            self.right_view.viewport().update()
+        # Bouton d'effacement d'arrière-plan actif seulement en overlay
+        if hasattr(self, "bg_remove_btn"):
+            self.bg_remove_btn.setEnabled(self.overlay_enabled)
+        # Fermer la popup d'overlay si besoin
+        if self.overlay_popup:
+            self.overlay_popup.hide()
+        # Fermer la popup d'ajustements si on la cachait via overlay off
+        if not checked and self.adjust_popup and self.adjust_popup.isVisible():
+            self.adjust_popup.hide()
+            self.toggle_side_panel_action.setChecked(False)
+        # Afficher la réglette si on vient d'activer
+        if checked:
+            self._show_overlay_slider_popup()
+        self._refresh_overlay()
+
+    def _on_overlay_alpha_changed(self, value: int):
+        self.overlay_alpha = max(0.0, min(1.0, value / 100.0))
+        for item in self.overlay_items.values():
+            if item:
+                item.setOpacity(self.overlay_alpha)
+        if self.overlay_popup:
+            self.overlay_popup.adjustSize()
+
+    def _on_blink_toggled(self, checked: bool):
+        if checked:
+            self._blink_state = True
+            self.left_view.setVisible(True)
+            self.right_view.setVisible(False)
+            self.blink_timer.start()
+        else:
+            self.blink_timer.stop()
+            self.left_view.setVisible(True)
+            self.right_view.setVisible(True)
 
     def _scale_annotation_meta(self, side: str, ratio: float) -> List[Dict[str, object]]:
         view = self.left_view if side == "left" else self.right_view
@@ -1911,6 +2354,53 @@ class ComparisonView(QWidget):
             if current == 0:
                 continue
             self._rotate_image(s, -current)
+
+    def _transform_meta_for_flip(self, side: str, axis: str) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+        """Applique une transformation miroir aux annotations/mesures."""
+        state = self.image_state[side]
+        base = state.get("base_image")
+        if base is None:
+            return [], []
+        w, h = base.width, base.height
+        view = self.left_view if side == "left" else self.right_view
+        annotations = view.get_annotation_meta()
+        measurements = view.get_measurement_meta()
+
+        def flip_point(x: float, y: float) -> Tuple[float, float]:
+            if axis == "h":
+                return (w - x, y)
+            return (x, h - y)
+
+        new_annotations = []
+        for entry in annotations:
+            nx, ny = flip_point(entry["x"], entry["y"])
+            new_annotations.append({
+                "x": nx,
+                "y": ny,
+                "type": entry["type"],
+                "label": entry["label"],
+            })
+
+        new_measurements = []
+        for entry in measurements:
+            sx, sy = flip_point(*entry["start"])
+            ex, ey = flip_point(*entry["end"])
+            new_measurements.append({"start": (sx, sy), "end": (ex, ey)})
+
+        return new_annotations, new_measurements
+
+    def _flip_image(self, side: str, axis: str = "h"):
+        """Miroir horizontal/vertical en conservant annotations/mesures."""
+        base = self.image_state[side].get("base_image")
+        if base is None:
+            return
+        annotations_meta, measurements_meta = self._transform_meta_for_flip(side, axis)
+        if axis == "h":
+            flipped = ImageOps.mirror(base)
+        else:
+            flipped = ImageOps.flip(base)
+        self.image_state[side]["base_image"] = flipped
+        self._render_image(side, annotations_meta=annotations_meta, measurements_meta=measurements_meta)
 
     # ─────────────────────────────────────────────────────────────────────
     # Export
@@ -2165,8 +2655,20 @@ class ComparisonView(QWidget):
             return None, fmt
 
     def _pil_to_pixmap(self, img: Image.Image) -> QPixmap:
-        img = img.convert("RGB")
-        data = img.tobytes("raw", "RGB")
-        bytes_per_line = img.width * 3
-        qimg = QImage(data, img.width, img.height, bytes_per_line, QImage.Format_RGB888).copy()
+        """Convertit un PIL Image en QPixmap en préservant l'alpha si présent."""
+        mode = img.mode
+        if mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA" if "A" in mode else "RGB")
+            mode = img.mode
+
+        if mode == "RGBA":
+            data = img.tobytes("raw", "RGBA")
+            bytes_per_line = img.width * 4
+            qimg = QImage(data, img.width, img.height, bytes_per_line, QImage.Format_RGBA8888).copy()
+        else:
+            img = img.convert("RGB")
+            data = img.tobytes("raw", "RGB")
+            bytes_per_line = img.width * 3
+            qimg = QImage(data, img.width, img.height, bytes_per_line, QImage.Format_RGB888).copy()
+
         return QPixmap.fromImage(qimg)
