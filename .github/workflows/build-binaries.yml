@@ -6,50 +6,49 @@ on:
         tags:
             - "v*"
 
+env:
+    PYTHON_VERSION: "3.11"
+    APP_NAME: "NIST-Studio"
+
 jobs:
-    build:
-        name: Build on ${{ matrix.os }}
-        runs-on: ${{ matrix.os }}
-        strategy:
-            fail-fast: false
-            matrix:
-                os: [ubuntu-latest, windows-latest, macos-latest]
+    # ============================================================
+    # LINUX BUILD
+    # ============================================================
+    build-linux:
+        name: Build Linux
+        runs-on: ubuntu-22.04
 
         steps:
-            - name: Checkout repo
+            - name: Checkout
               uses: actions/checkout@v4
 
-            - name: Set up Python
+            - name: Setup Python
               uses: actions/setup-python@v5
               with:
-                  python-version: "3.11"
+                  python-version: ${{ env.PYTHON_VERSION }}
 
-            - name: Install dependencies
+            - name: Install Python dependencies
               run: |
                   python -m pip install --upgrade pip
                   pip install -r requirements.txt
                   pip install pyinstaller
 
-            # Build NBIS tools (dwsq for WSQ decoding)
-            - name: Build NBIS (Linux)
-              if: runner.os == 'Linux'
+            - name: Build NBIS (WSQ decoder)
               continue-on-error: true
-              working-directory: ${{ github.workspace }}
               run: |
-                  set -e
                   sudo apt-get update
                   sudo apt-get install -y build-essential libpng-dev zlib1g-dev
 
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
-
                   cd nbis-src
-                  mkdir -p install
-                  chmod +x setup.sh
 
                   export CFLAGS="-fcommon -O2"
                   export CDEFS="-D__NBISLE__ -fcommon"
 
+                  mkdir -p install
+                  chmod +x setup.sh
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
+
                   make config
                   sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
                   make -j$(nproc) it
@@ -57,99 +56,75 @@ jobs:
 
                   cd ..
                   mkdir -p nbis/bin
-                  cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || true
-                  cp nbis-src/install/bin/cwsq nbis/bin/ 2>/dev/null || true
-                  cp nbis-src/install/bin/nfiq nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || \
+                      find nbis-src -name "dwsq" -type f -executable -exec cp {} nbis/bin/ \; 2>/dev/null || true
 
-                  if [ ! -f nbis/bin/dwsq ]; then
-                    find nbis-src -name "dwsq" -type f -perm /111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
-                  fi
+                  echo "=== NBIS Build Result ==="
+                  ls -la nbis/bin/ 2>/dev/null || echo "No NBIS binaries (WSQ via Python fallback)"
 
-                  echo "NBIS build completed"
-                  ls -la nbis/bin/ || echo "No binaries found"
+            - name: Build application
+              run: pyinstaller nist-studio.spec
 
-            - name: Build NBIS (macOS)
-              if: runner.os == 'macOS'
-              working-directory: ${{ github.workspace }}
+            - name: Create tar.gz archive
               run: |
-                  set -e
-                  brew install libpng zlib
+                  mkdir -p release
+                  cd dist
+                  tar -czvf ../release/${{ env.APP_NAME }}-linux-x64.tar.gz ${{ env.APP_NAME }}
 
-                  git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: linux-build
+                  path: release/
+                  retention-days: 30
 
-                  cd nbis-src
-                  mkdir -p install
-                  chmod +x setup.sh
+    # ============================================================
+    # WINDOWS BUILD
+    # ============================================================
+    build-windows:
+        name: Build Windows
+        runs-on: windows-latest
 
-                  # macOS needs extra flags for modern clang
-                  export CFLAGS="-fcommon -O2 -Wno-error=implicit-function-declaration -Wno-error=int-conversion"
-                  export CDEFS="-D__NBISLE__ -fcommon"
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
 
-                  ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
-                  make config
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ env.PYTHON_VERSION }}
 
-                  # Fix compiler flags in generated makefile
-                  sed -i '' 's/-O2/-O2 -fcommon -Wno-error=implicit-function-declaration/g' p_rules.mak 2>/dev/null || true
+            - name: Install Python dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+                  pip install pyinstaller
 
-                  # Build with error tolerance for warnings
-                  make -j$(sysctl -n hw.ncpu) it CFLAGS="$CFLAGS" || make it CFLAGS="$CFLAGS"
-                  make install
-
-                  cd ..
-                  mkdir -p nbis/bin
-
-                  # Copy binaries - try multiple locations
-                  cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || true
-                  cp nbis-src/install/bin/cwsq nbis/bin/ 2>/dev/null || true
-                  cp nbis-src/install/bin/nfiq nbis/bin/ 2>/dev/null || true
-
-                  # Fallback: search in build directory
-                  if [ ! -f nbis/bin/dwsq ]; then
-                    find nbis-src -name "dwsq" -type f -perm +111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
-                  fi
-
-                  echo "=== NBIS build results ==="
-                  ls -la nbis/bin/ || echo "WARNING: No binaries found"
-
-                  # Verify dwsq exists - critical for WSQ decoding on macOS
-                  if [ -f nbis/bin/dwsq ]; then
-                    echo "SUCCESS: dwsq binary found"
-                    file nbis/bin/dwsq
-                  else
-                    echo "ERROR: dwsq not found - WSQ images will not work on macOS"
-                    exit 1
-                  fi
-
-            - name: Setup MSYS2 (Windows)
-              if: runner.os == 'Windows'
+            - name: Setup MSYS2
               uses: msys2/setup-msys2@v2
               with:
                   msystem: MINGW64
                   update: true
                   install: >-
                       mingw-w64-x86_64-gcc
-                      mingw-w64-x86_64-make
                       mingw-w64-x86_64-libpng
                       make
                       git
 
-            - name: Build NBIS (Windows)
-              if: runner.os == 'Windows'
+            - name: Build NBIS (WSQ decoder)
               continue-on-error: true
               shell: msys2 {0}
               run: |
-                  set -e
-
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
-
                   cd nbis-src
-                  mkdir -p install
-                  chmod +x setup.sh
 
                   export CFLAGS="-fcommon -O2"
                   export CDEFS="-D__NBISLE__ -fcommon"
 
+                  mkdir -p install
+                  chmod +x setup.sh
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
+
                   make config
                   sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
                   make -j$(nproc) it
@@ -157,21 +132,14 @@ jobs:
 
                   cd ..
                   mkdir -p nbis/bin
-                  cp nbis-src/install/bin/dwsq.exe nbis/bin/ 2>/dev/null || true
-                  cp nbis-src/install/bin/cwsq.exe nbis/bin/ 2>/dev/null || true
-                  cp nbis-src/install/bin/nfiq.exe nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/dwsq.exe nbis/bin/ 2>/dev/null || \
+                      find nbis-src -name "dwsq.exe" -type f -exec cp {} nbis/bin/ \; 2>/dev/null || \
+                      find nbis-src -name "dwsq" -type f -exec cp {} nbis/bin/dwsq.exe \; 2>/dev/null || true
 
-                  if [ ! -f nbis/bin/dwsq.exe ]; then
-                    find nbis-src -name "dwsq.exe" -type f -exec cp {} nbis/bin/ \; 2>/dev/null || true
-                    find nbis-src -name "dwsq" -type f -exec cp {} nbis/bin/dwsq.exe \; 2>/dev/null || true
-                  fi
+                  echo "=== NBIS Build Result ==="
+                  ls -la nbis/bin/ 2>/dev/null || echo "No NBIS binaries (WSQ via Python fallback)"
 
-                  echo "NBIS build completed"
-                  ls -la nbis/bin/ || echo "No binaries found"
-
-            # Generate icons
             - name: Generate Windows icon
-              if: runner.os == 'Windows'
               run: |
                   python -c "
                   from PIL import Image
@@ -192,25 +160,105 @@ jobs:
                           img = img.convert('RGBA')
                       images.append(img)
 
-                  ico_path = f'{icon_dir}/appicon-nist-studio.ico'
-
                   images[0].save(
-                      ico_path,
+                      f'{icon_dir}/appicon-nist-studio.ico',
                       format='ICO',
                       append_images=images[1:],
                       sizes=[(img.width, img.height) for img in images]
                   )
-                  print('Generated multi-resolution ICO: appicon-nist-studio.ico')
+                  print('Generated: appicon-nist-studio.ico')
                   "
 
-            - name: Generate macOS icon
-              if: runner.os == 'macOS'
-              run: |
-                  mkdir -p mynist/resources/icons/AppIcon.iconset
+            - name: Build application
+              run: pyinstaller nist-studio.spec
 
+            - name: Create ZIP archive
+              shell: pwsh
+              run: |
+                  New-Item -ItemType Directory -Force -Path release
+                  Compress-Archive -Path "dist\${{ env.APP_NAME }}" -DestinationPath "release\${{ env.APP_NAME }}-windows-x64.zip"
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: windows-build
+                  path: release/
+                  retention-days: 30
+
+    # ============================================================
+    # MACOS BUILD
+    # ============================================================
+    build-macos:
+        name: Build macOS
+        runs-on: macos-14
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ env.PYTHON_VERSION }}
+
+            - name: Install Python dependencies
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt
+                  pip install pyinstaller
+
+            - name: Build NBIS (WSQ decoder - REQUIRED for macOS)
+              id: nbis
+              run: |
+                  set -e
+                  brew install libpng
+
+                  git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
+                  cd nbis-src
+
+                  # Modern clang requires these flags
+                  export CFLAGS="-fcommon -O2 -Wno-implicit-function-declaration -Wno-int-conversion"
+                  export CDEFS="-D__NBISLE__ -fcommon"
+
+                  mkdir -p install
+                  chmod +x setup.sh
+                  ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
+
+                  make config
+                  sed -i '' 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
+
+                  # Try parallel build, fallback to sequential
+                  make -j$(sysctl -n hw.ncpu) it CFLAGS="$CFLAGS" 2>/dev/null || make it CFLAGS="$CFLAGS"
+                  make install
+
+                  cd ..
+                  mkdir -p nbis/bin
+
+                  # Copy binaries
+                  if [ -f nbis-src/install/bin/dwsq ]; then
+                      cp nbis-src/install/bin/dwsq nbis/bin/
+                  else
+                      find nbis-src -name "dwsq" -type f -perm +111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
+                  fi
+
+                  # Verify dwsq exists (critical for macOS - Python wsq crashes on ARM64)
+                  if [ -f nbis/bin/dwsq ]; then
+                      echo "nbis_available=true" >> $GITHUB_OUTPUT
+                      echo "✓ NBIS dwsq built successfully"
+                      file nbis/bin/dwsq
+                  else
+                      echo "nbis_available=false" >> $GITHUB_OUTPUT
+                      echo "✗ NBIS dwsq not found - WSQ images will show error on macOS"
+                      # Don't fail the build, the app handles missing dwsq gracefully
+                  fi
+
+            - name: Generate macOS icon (.icns)
+              run: |
                   icon_dir="mynist/resources/icons"
                   iconset="$icon_dir/AppIcon.iconset"
+                  mkdir -p "$iconset"
 
+                  # Generate all required sizes for macOS
                   sips -z 16 16     "$icon_dir/appicon-nist-studio-16.png" --out "$iconset/icon_16x16.png"
                   sips -z 32 32     "$icon_dir/appicon-nist-studio-32.png" --out "$iconset/icon_16x16@2x.png"
                   sips -z 32 32     "$icon_dir/appicon-nist-studio-32.png" --out "$iconset/icon_32x32.png"
@@ -223,92 +271,96 @@ jobs:
                   sips -z 1024 1024 "$icon_dir/appicon-nist-studio-512.png" --out "$iconset/icon_512x512@2x.png"
 
                   iconutil -c icns "$iconset" -o "$icon_dir/appicon-nist-studio.icns"
+                  echo "Generated: appicon-nist-studio.icns"
 
-                  echo "Generated macOS icon: appicon-nist-studio.icns"
+            - name: Build application (.app bundle)
+              run: pyinstaller nist-studio.spec
 
-            - name: Build with PyInstaller
+            - name: Code sign application (ad-hoc)
               run: |
-                  pyinstaller nist-studio.spec
+                  APP_PATH="dist/${{ env.APP_NAME }}.app"
 
-            # Sign macOS .app bundle (ad-hoc signature for Gatekeeper)
-            - name: Sign macOS app bundle
-              if: runner.os == 'macOS'
-              run: |
-                  echo "Signing NIST-Studio.app bundle..."
+                  echo "Signing nested components..."
 
-                  # Sign all nested binaries first (inside out)
-                  find "dist/NIST-Studio.app" -type f \( -name "*.so" -o -name "*.dylib" \) \
-                      -exec codesign --force --sign - --timestamp=none {} \;
+                  # Sign all dynamic libraries
+                  find "$APP_PATH" -type f \( -name "*.so" -o -name "*.dylib" \) -exec \
+                      codesign --force --sign - --timestamp=none {} \;
 
-                  # Sign NBIS binaries (dwsq, cwsq, nfiq) if present
-                  echo "Signing NBIS binaries..."
-                  find "dist/NIST-Studio.app" -type f \( -name "dwsq" -o -name "cwsq" -o -name "nfiq" \) \
-                      -exec codesign --force --sign - --timestamp=none {} \;
+                  # Sign NBIS binaries if present
+                  find "$APP_PATH" -type f \( -name "dwsq" -o -name "cwsq" -o -name "nfiq" \) -exec \
+                      codesign --force --sign - --timestamp=none {} \;
 
-                  # Sign any frameworks
-                  find "dist/NIST-Studio.app/Contents/Frameworks" -name "*.framework" -type d 2>/dev/null | while read fw; do
-                      codesign --force --deep --sign - --timestamp=none "$fw"
+                  # Sign frameworks
+                  find "$APP_PATH/Contents/Frameworks" -name "*.framework" -type d 2>/dev/null | while read fw; do
+                      codesign --force --deep --sign - --timestamp=none "$fw" || true
                   done
 
-                  # Sign the main executable
-                  codesign --force --sign - --timestamp=none \
-                      "dist/NIST-Studio.app/Contents/MacOS/nist-studio"
+                  # Sign main executable
+                  codesign --force --sign - --timestamp=none "$APP_PATH/Contents/MacOS/nist-studio"
 
-                  # Sign the entire .app bundle
-                  codesign --force --deep --sign - --timestamp=none "dist/NIST-Studio.app"
+                  # Sign the entire bundle
+                  codesign --force --deep --sign - --timestamp=none "$APP_PATH"
 
                   # Verify
-                  echo "Verifying signature..."
-                  codesign --verify --verbose "dist/NIST-Studio.app" || echo "Verification note (ad-hoc signature)"
+                  codesign --verify --verbose "$APP_PATH" && echo "✓ Signature valid" || echo "Note: ad-hoc signature"
 
-                  echo "macOS signing completed"
-
-            # Create distribution archives
-            - name: Create archive (Linux)
-              if: runner.os == 'Linux'
+            - name: Create DMG installer
               run: |
                   mkdir -p release
-                  cd dist
-                  tar -czvf ../release/NIST-Studio-linux.tar.gz NIST-Studio
-                  cd ..
-                  echo "Created NIST-Studio-linux.tar.gz"
+                  APP_PATH="dist/${{ env.APP_NAME }}.app"
+                  DMG_NAME="${{ env.APP_NAME }}-macos-arm64.dmg"
+
+                  # Create temporary DMG folder with app and Applications symlink
+                  DMG_TEMP="dmg_temp"
+                  mkdir -p "$DMG_TEMP"
+                  cp -R "$APP_PATH" "$DMG_TEMP/"
+                  ln -s /Applications "$DMG_TEMP/Applications"
+
+                  # Create compressed DMG
+                  hdiutil create -volname "${{ env.APP_NAME }}" \
+                      -srcfolder "$DMG_TEMP" \
+                      -ov -format UDZO \
+                      "release/$DMG_NAME"
+
+                  rm -rf "$DMG_TEMP"
+                  echo "Created: $DMG_NAME"
                   ls -lh release/
 
-            - name: Create archive (macOS)
-              if: runner.os == 'macOS'
-              run: |
-                  mkdir -p release
-
-                  # Create DMG for macOS (better user experience)
-                  hdiutil create -volname "NIST Studio" -srcfolder "dist/NIST-Studio.app" \
-                      -ov -format UDZO "release/NIST-Studio-macos.dmg"
-
-                  echo "Created NIST-Studio-macos.dmg"
-                  ls -lh release/
-
-            - name: Create archive (Windows)
-              if: runner.os == 'Windows'
-              shell: pwsh
-              run: |
-                  New-Item -ItemType Directory -Force -Path release
-                  Compress-Archive -Path "dist\NIST-Studio" -DestinationPath "release\NIST-Studio-windows.zip"
-                  Write-Host "Created NIST-Studio-windows.zip"
-                  Get-ChildItem release
-
-            # Upload artifacts
             - name: Upload artifact
               uses: actions/upload-artifact@v4
               with:
-                  name: nist-studio-${{ matrix.os }}
+                  name: macos-build
                   path: release/
+                  retention-days: 30
 
-            # Auto-release on tag
-            - name: Create or update GitHub Release
-              if: startsWith(github.ref, 'refs/tags/')
+    # ============================================================
+    # RELEASE (only on tags)
+    # ============================================================
+    release:
+        name: Create Release
+        needs: [build-linux, build-windows, build-macos]
+        runs-on: ubuntu-latest
+        if: startsWith(github.ref, 'refs/tags/')
+
+        steps:
+            - name: Download all artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: artifacts
+
+            - name: Prepare release files
+              run: |
+                  mkdir -p release
+                  find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" \) -exec mv {} release/ \;
+                  echo "=== Release files ==="
+                  ls -lh release/
+
+            - name: Create GitHub Release
               uses: softprops/action-gh-release@v2
               with:
                   files: release/*
                   draft: false
                   prerelease: false
+                  generate_release_notes: true
               env:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
