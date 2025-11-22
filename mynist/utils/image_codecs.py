@@ -77,15 +77,30 @@ def _find_dwsq() -> Optional[str]:
             bundle_dir / 'nbis' / 'bin' / dwsq_name,  # onefolder standard
         ]
 
-        # Pour macOS .app bundle, les ressources peuvent être dans Contents/Resources
+        # Pour macOS .app bundle, explorer toute la structure
         if sys.platform == 'darwin':
-            # Si _MEIPASS est dans Contents/Frameworks ou Contents/MacOS
-            contents_dir = bundle_dir.parent
-            if contents_dir.name in ('Frameworks', 'MacOS'):
-                resources_dir = contents_dir.parent / 'Resources'
-                possible_paths.append(resources_dir / 'nbis' / 'bin' / dwsq_name)
-            # Aussi essayer directement dans _MEIPASS (onefolder classique)
-            possible_paths.append(bundle_dir / 'nbis' / 'bin' / dwsq_name)
+            # _MEIPASS peut pointer vers différents endroits selon PyInstaller version
+            # Essayer de remonter à la racine .app et chercher partout
+            current = bundle_dir
+            for _ in range(5):  # Max 5 niveaux pour trouver .app
+                if current.suffix == '.app' or current.name == 'Contents':
+                    if current.suffix == '.app':
+                        contents = current / 'Contents'
+                    else:
+                        contents = current
+                    # Chercher dans tous les sous-dossiers possibles
+                    possible_paths.extend([
+                        contents / 'Resources' / 'nbis' / 'bin' / dwsq_name,
+                        contents / 'Frameworks' / 'nbis' / 'bin' / dwsq_name,
+                        contents / 'MacOS' / 'nbis' / 'bin' / dwsq_name,
+                    ])
+                    break
+                current = current.parent
+            # Aussi chercher relativement à _MEIPASS
+            possible_paths.extend([
+                bundle_dir.parent / 'Resources' / 'nbis' / 'bin' / dwsq_name,
+                bundle_dir.parent.parent / 'Resources' / 'nbis' / 'bin' / dwsq_name,
+            ])
 
         for path in possible_paths:
             if path.exists():

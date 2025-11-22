@@ -70,11 +70,10 @@ jobs:
 
             - name: Build NBIS (macOS)
               if: runner.os == 'macOS'
-              continue-on-error: true
               working-directory: ${{ github.workspace }}
               run: |
                   set -e
-                  brew install libpng
+                  brew install libpng zlib
 
                   git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
 
@@ -82,27 +81,44 @@ jobs:
                   mkdir -p install
                   chmod +x setup.sh
 
-                  export CFLAGS="-fcommon -O2"
+                  # macOS needs extra flags for modern clang
+                  export CFLAGS="-fcommon -O2 -Wno-error=implicit-function-declaration -Wno-error=int-conversion"
                   export CDEFS="-D__NBISLE__ -fcommon"
 
                   ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
                   make config
-                  sed -i '' 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
-                  make -j$(sysctl -n hw.ncpu) it
+
+                  # Fix compiler flags in generated makefile
+                  sed -i '' 's/-O2/-O2 -fcommon -Wno-error=implicit-function-declaration/g' p_rules.mak 2>/dev/null || true
+
+                  # Build with error tolerance for warnings
+                  make -j$(sysctl -n hw.ncpu) it CFLAGS="$CFLAGS" || make it CFLAGS="$CFLAGS"
                   make install
 
                   cd ..
                   mkdir -p nbis/bin
+
+                  # Copy binaries - try multiple locations
                   cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/cwsq nbis/bin/ 2>/dev/null || true
                   cp nbis-src/install/bin/nfiq nbis/bin/ 2>/dev/null || true
 
+                  # Fallback: search in build directory
                   if [ ! -f nbis/bin/dwsq ]; then
-                    find nbis-src -name "dwsq" -type f -perm /111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
+                    find nbis-src -name "dwsq" -type f -perm +111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
                   fi
 
-                  echo "NBIS build completed"
-                  ls -la nbis/bin/ || echo "No binaries found"
+                  echo "=== NBIS build results ==="
+                  ls -la nbis/bin/ || echo "WARNING: No binaries found"
+
+                  # Verify dwsq exists - critical for WSQ decoding on macOS
+                  if [ -f nbis/bin/dwsq ]; then
+                    echo "SUCCESS: dwsq binary found"
+                    file nbis/bin/dwsq
+                  else
+                    echo "ERROR: dwsq not found - WSQ images will not work on macOS"
+                    exit 1
+                  fi
 
             - name: Setup MSYS2 (Windows)
               if: runner.os == 'Windows'
