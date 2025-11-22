@@ -52,9 +52,9 @@ class HomeView(QWidget):
         """Return path to appropriate logo based on theme."""
         icons_dir = Path(__file__).parent.parent / "resources" / "icons"
         if self._is_dark_theme():
-            return icons_dir / "logo-nist-studio-white.png"
+            return icons_dir / "logo-nist-studio-white-short.png"
         else:
-            return icons_dir / "logo-nist-studio-black.png"
+            return icons_dir / "logo-nist-studio-black-short.png"
 
     def _load_icon(self, name: str, size: int = 48) -> QIcon:
         """Load SVG icon with OS-appropriate color."""

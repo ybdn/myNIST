@@ -69,7 +69,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
         # Set application icon
-        icon_path = Path(__file__).parent.parent / 'resources' / 'icons' / 'mynist.png'
+        icon_path = Path(__file__).parent.parent / 'resources' / 'icons' / 'appicon-nist-studio.png'
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 
