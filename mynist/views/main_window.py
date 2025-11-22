@@ -40,6 +40,9 @@ from mynist.utils.constants import (
 )
 from mynist.utils.logger import get_logger
 from mynist.utils.recent_files import RecentFiles
+from mynist.utils.design_tokens import (
+    Colors, Typography, Spacing, Radius, Dimensions
+)
 
 logger = get_logger(__name__)
 
@@ -119,43 +122,54 @@ class MainWindow(QMainWindow):
         container = QWidget()
         container.setObjectName("ViewerRoot")
 
-        # Apply theme-aware styling
+        # Apply NIST Studio Design System
         palette = self.palette()
         window = palette.color(QPalette.Window)
-        base = palette.color(QPalette.Base)
-        text = palette.color(QPalette.Text)
-        border = palette.color(QPalette.Mid)
+        is_dark = window.value() < 128
 
-        is_dark = window.value() < 96 or base.value() < 96
+        if is_dark:
+            window_bg = Colors.BG_DARK
+            header_bg = Colors.SURFACE_DARK
+            text_color = Colors.TEXT_PRIMARY_DARK
+            border_color = Colors.BORDER_DARK
+        else:
+            window_bg = Colors.BG_LIGHT
+            header_bg = Colors.SURFACE_LIGHT
+            text_color = Colors.TEXT_PRIMARY_LIGHT
+            border_color = Colors.BORDER_SUBTLE
 
-        def tweak(color: QColor, factor: int) -> QColor:
-            return color.lighter(factor) if is_dark else color.darker(factor)
-
-        header_bg = tweak(base, 105)
-
-        container.setStyleSheet(
-            f"""
+        container.setStyleSheet(f"""
             #ViewerRoot {{
-                background-color: {window.name()};
+                background-color: {window_bg};
             }}
             #viewerHeader {{
-                background: {header_bg.name()};
-                border-bottom: 1px solid {border.name()};
-                padding: 8px 16px;
+                background: {header_bg};
+                border-bottom: 1px solid {border_color};
             }}
             #viewerHeader QLabel {{
-                color: {text.name()};
+                color: {text_color};
             }}
             #viewerTitleLabel {{
-                font-size: 16px;
-                font-weight: bold;
+                font-size: {Typography.SIZE_MEDIUM}px;
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                color: {Colors.PRIMARY if not is_dark else text_color};
             }}
             #viewerFileLabel {{
-                font-size: 12px;
-                color: {border.name()};
+                font-size: {Typography.SIZE_SMALL}px;
+                color: {Colors.TEXT_SECONDARY};
             }}
-            """
-        )
+            #hubButton {{
+                background: {Colors.ACCENT};
+                color: white;
+                border: none;
+                border-radius: {Radius.MD}px;
+                padding: {Spacing.SM}px {Spacing.LG}px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+            }}
+            #hubButton:hover {{
+                background: {Colors.HOVER_ACCENT};
+            }}
+        """)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
@@ -165,10 +179,15 @@ class MainWindow(QMainWindow):
         header = QFrame()
         header.setObjectName("viewerHeader")
         header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(16, 8, 16, 8)
+        header_layout.setContentsMargins(
+            Spacing.HEADER_PADDING_H, Spacing.HEADER_PADDING_V,
+            Spacing.HEADER_PADDING_H, Spacing.HEADER_PADDING_V
+        )
 
         # Hub button
         hub_btn = QPushButton("Retour au Hub")
+        hub_btn.setObjectName("hubButton")
+        hub_btn.setCursor(Qt.PointingHandCursor)
         hub_btn.clicked.connect(self.switch_to_home)
         hub_icon = self._load_hub_icon("home", 20)
         if not hub_icon.isNull():

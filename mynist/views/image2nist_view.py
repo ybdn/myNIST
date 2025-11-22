@@ -1,10 +1,9 @@
 """Image-2-NIST placeholder view (coming soon)."""
 
 from pathlib import Path
-from typing import Optional
 
-from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QPalette, QColor, QIcon, QPixmap, QPainter
+from PyQt5.QtCore import Qt, pyqtSignal
+from PyQt5.QtGui import QPalette, QIcon, QPixmap, QPainter
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget,
@@ -13,7 +12,10 @@ from PyQt5.QtWidgets import (
     QLabel,
     QPushButton,
     QFrame,
-    QSizePolicy,
+)
+
+from mynist.utils.design_tokens import (
+    Colors, Typography, Spacing, Radius
 )
 
 
@@ -48,56 +50,88 @@ class Image2NISTView(QWidget):
 
         return QIcon(pixmap)
 
-    def _apply_theme(self):
-        """Compute palette-aware stylesheet."""
+    def _is_dark_mode(self) -> bool:
+        """Detect if system is in dark mode."""
         palette = self.palette()
         window = palette.color(QPalette.Window)
-        base = palette.color(QPalette.Base)
-        text = palette.color(QPalette.Text)
-        border = palette.color(QPalette.Mid)
+        return window.value() < 128
 
-        is_dark = window.value() < 96 or base.value() < 96
+    def _apply_theme(self):
+        """Apply NIST Studio Design System theme."""
+        is_dark = self._is_dark_mode()
 
-        def tweak(color: QColor, factor: int) -> QColor:
-            return color.lighter(factor) if is_dark else color.darker(factor)
+        if is_dark:
+            window_bg = Colors.BG_DARK
+            surface_bg = Colors.SURFACE_DARK
+            text_primary = Colors.TEXT_PRIMARY_DARK
+            border = Colors.BORDER_DARK
+        else:
+            window_bg = Colors.BG_LIGHT
+            surface_bg = Colors.SURFACE_LIGHT
+            text_primary = Colors.TEXT_PRIMARY_LIGHT
+            border = Colors.BORDER_SUBTLE
 
-        card_bg = tweak(base, 110)
-
-        self.setStyleSheet(
-            f"""
+        self.setStyleSheet(f"""
             #Image2NISTRoot {{
-                background-color: {window.name()};
-                color: {text.name()};
+                background-color: {window_bg};
             }}
+
             #Image2NISTRoot QLabel {{
-                color: {text.name()};
+                color: {text_primary};
             }}
+
             #titleLabel {{
-                font-size: 20px;
-                font-weight: bold;
+                font-size: {Typography.SIZE_LARGE}px;
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                color: {Colors.PRIMARY if not is_dark else text_primary};
             }}
+
             #subtitleLabel {{
-                font-size: 14px;
-                color: {border.name()};
+                font-size: {Typography.SIZE_NORMAL}px;
+                color: {Colors.TEXT_SECONDARY};
             }}
+
+            #hubButton {{
+                background: {Colors.ACCENT};
+                color: white;
+                border: none;
+                border-radius: {Radius.MD}px;
+                padding: {Spacing.SM}px {Spacing.LG}px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+            }}
+
+            #hubButton:hover {{
+                background: {Colors.HOVER_ACCENT};
+            }}
+
             QFrame#placeholderFrame {{
-                background: {card_bg.name()};
-                border: 2px dashed {border.name()};
-                border-radius: 12px;
+                background: {surface_bg};
+                border: 2px dashed {border};
+                border-radius: {Radius.XL}px;
             }}
-            """
-        )
+
+            #comingSoonLabel {{
+                font-style: italic;
+                color: {Colors.TEXT_SECONDARY};
+                margin-top: {Spacing.LG}px;
+            }}
+        """)
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(
+            Spacing.XXXL, Spacing.XXL,
+            Spacing.XXXL, Spacing.XXL
+        )
+        layout.setSpacing(Spacing.XL)
 
         # Header with back button
         header = QHBoxLayout()
         header.setContentsMargins(0, 0, 0, 0)
 
         back_btn = QPushButton("Retour au Hub")
+        back_btn.setObjectName("hubButton")
+        back_btn.setCursor(Qt.PointingHandCursor)
         back_btn.clicked.connect(self.back_requested.emit)
         back_icon = self._load_icon("home", 20)
         if not back_icon.isNull():
@@ -113,7 +147,7 @@ class Image2NISTView(QWidget):
         header.addStretch()
         # Spacer to balance the back button
         spacer = QWidget()
-        spacer.setFixedWidth(100)
+        spacer.setFixedWidth(120)
         header.addWidget(spacer)
 
         layout.addLayout(header)
@@ -123,11 +157,14 @@ class Image2NISTView(QWidget):
 
         frame = QFrame()
         frame.setObjectName("placeholderFrame")
-        frame.setFixedSize(500, 300)
+        frame.setFixedSize(500, 320)
 
         frame_layout = QVBoxLayout()
-        frame_layout.setContentsMargins(32, 32, 32, 32)
-        frame_layout.setSpacing(16)
+        frame_layout.setContentsMargins(
+            Spacing.XXXL, Spacing.XXXL,
+            Spacing.XXXL, Spacing.XXXL
+        )
+        frame_layout.setSpacing(Spacing.LG)
         frame_layout.setAlignment(Qt.AlignCenter)
 
         # Icon
@@ -156,7 +193,7 @@ class Image2NISTView(QWidget):
 
         # Coming soon label
         soon = QLabel("Disponible prochainement")
-        soon.setStyleSheet("font-style: italic; margin-top: 16px;")
+        soon.setObjectName("comingSoonLabel")
         soon.setAlignment(Qt.AlignCenter)
         frame_layout.addWidget(soon)
 

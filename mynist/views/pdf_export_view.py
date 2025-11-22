@@ -1,10 +1,10 @@
-"""Vue dédiée à l'export PDF décadactylaire."""
+"""Vue dediee a l'export PDF decadactylaire."""
 
 from pathlib import Path
 from typing import Optional
 
-from PyQt5.QtCore import pyqtSignal, Qt, QSize
-from PyQt5.QtGui import QColor, QPalette, QIcon, QPixmap, QPainter
+from PyQt5.QtCore import pyqtSignal, Qt
+from PyQt5.QtGui import QPalette, QIcon, QPixmap, QPainter
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget,
@@ -13,14 +13,16 @@ from PyQt5.QtWidgets import (
     QLabel,
     QPushButton,
     QLineEdit,
-    QFrame,
     QGroupBox,
-    QSizePolicy,
+)
+
+from mynist.utils.design_tokens import (
+    Colors, Typography, Spacing, Radius
 )
 
 
 class PdfExportView(QWidget):
-    """Vue pour paramétrer et lancer l'export PDF décadactylaire."""
+    """Vue pour parametrer et lancer l'export PDF decadactylaire."""
 
     browse_requested = pyqtSignal()
     export_requested = pyqtSignal(str)
@@ -53,95 +55,116 @@ class PdfExportView(QWidget):
 
         return QIcon(pixmap)
 
-    def _apply_theme(self):
-        """Compute palette-aware stylesheet for light/dark compatibility."""
+    def _is_dark_mode(self) -> bool:
+        """Detect if system is in dark mode."""
         palette = self.palette()
         window = palette.color(QPalette.Window)
-        base = palette.color(QPalette.Base)
-        text = palette.color(QPalette.Text)
-        border = palette.color(QPalette.Mid)
-        highlight = palette.color(QPalette.Highlight)
+        return window.value() < 128
 
-        is_dark = window.value() < 96 or base.value() < 96
+    def _apply_theme(self):
+        """Apply NIST Studio Design System theme."""
+        is_dark = self._is_dark_mode()
 
-        def tweak(color: QColor, factor: int) -> QColor:
-            return color.lighter(factor) if is_dark else color.darker(factor)
+        if is_dark:
+            window_bg = Colors.BG_DARK
+            surface_bg = Colors.SURFACE_DARK
+            text_primary = Colors.TEXT_PRIMARY_DARK
+            border = Colors.BORDER_DARK
+        else:
+            window_bg = Colors.BG_LIGHT
+            surface_bg = Colors.SURFACE_LIGHT
+            text_primary = Colors.TEXT_PRIMARY_LIGHT
+            border = Colors.BORDER_SUBTLE
 
-        card_bg = tweak(base, 110)
-        info_bg = tweak(base, 105)
-
-        self.setStyleSheet(
-            f"""
+        self.setStyleSheet(f"""
             #PdfExportRoot {{
-                background-color: {window.name()};
-                color: {text.name()};
+                background-color: {window_bg};
             }}
+
             #PdfExportRoot QLabel {{
-                color: {text.name()};
+                color: {text_primary};
             }}
+
             #titleLabel {{
-                font-size: 20px;
-                font-weight: bold;
+                font-size: {Typography.SIZE_LARGE}px;
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                color: {Colors.PRIMARY if not is_dark else text_primary};
             }}
+
             #subtitleLabel {{
-                font-size: 12px;
-                color: {border.name()};
+                font-size: {Typography.SIZE_SMALL}px;
+                color: {Colors.TEXT_SECONDARY};
             }}
+
             QGroupBox {{
-                font-weight: bold;
-                border: 1px solid {border.name()};
-                border-radius: 8px;
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                border: 1px solid {border};
+                border-radius: {Radius.LG}px;
                 margin-top: 12px;
-                padding: 16px;
-                background: {card_bg.name()};
+                padding: {Spacing.LG}px;
+                background: {surface_bg};
             }}
+
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
                 padding: 4px 12px;
-                background: {window.name()};
-                border-radius: 4px;
+                background: {window_bg};
+                border-radius: {Radius.SM}px;
             }}
-            QFrame#sourceFrame {{
-                background: {info_bg.name()};
-                border: 1px solid {border.name()};
-                border-radius: 8px;
-                padding: 12px;
-            }}
-            QFrame#infoFrame {{
-                background: {info_bg.name()};
-                border: 1px solid {border.name()};
-                border-radius: 8px;
-            }}
-            QPushButton#exportBtn {{
-                background: {highlight.name()};
+
+            #hubButton {{
+                background: {Colors.ACCENT};
                 color: white;
-                font-weight: bold;
-                font-size: 14px;
-                padding: 12px 32px;
-                border-radius: 8px;
+                border: none;
+                border-radius: {Radius.MD}px;
+                padding: {Spacing.SM}px {Spacing.LG}px;
+                font-weight: {Typography.WEIGHT_MEDIUM};
+            }}
+
+            #hubButton:hover {{
+                background: {Colors.HOVER_ACCENT};
+            }}
+
+            #exportBtn {{
+                background: {Colors.ACCENT};
+                color: white;
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                font-size: {Typography.SIZE_NORMAL}px;
+                padding: {Spacing.MD}px {Spacing.XXXL}px;
+                border-radius: {Radius.LG}px;
                 border: none;
             }}
-            QPushButton#exportBtn:hover {{
-                background: {tweak(highlight, 120).name()};
+
+            #exportBtn:hover {{
+                background: {Colors.HOVER_ACCENT};
             }}
-            QPushButton#exportBtn:disabled {{
-                background: {border.name()};
-                color: {tweak(text, 150).name()};
+
+            #exportBtn:disabled {{
+                background: {Colors.DISABLED};
+                color: {Colors.TEXT_SECONDARY};
             }}
+
             QLineEdit {{
-                padding: 8px 12px;
-                border: 1px solid {border.name()};
-                border-radius: 6px;
-                background: {base.name()};
+                padding: {Spacing.SM}px {Spacing.MD}px;
+                border: 1px solid {border};
+                border-radius: {Radius.MD}px;
+                background: {surface_bg};
+                color: {text_primary};
             }}
-            """
-        )
+
+            QLineEdit:focus {{
+                border-color: {Colors.ACCENT};
+            }}
+        """)
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(32, 24, 32, 24)
-        layout.setSpacing(20)
+        layout.setContentsMargins(
+            Spacing.XXXL, Spacing.XXL,
+            Spacing.XXXL, Spacing.XXL
+        )
+        layout.setSpacing(Spacing.XL)
 
         # Header with back button and title
         header = self._build_header()
@@ -152,7 +175,7 @@ class PdfExportView(QWidget):
         content.setMaximumWidth(700)
         content_layout = QVBoxLayout()
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(20)
+        content_layout.setSpacing(Spacing.XL)
 
         # Source file group
         source_group = self._build_source_group()
@@ -168,6 +191,7 @@ class PdfExportView(QWidget):
 
         self.export_btn = QPushButton("Exporter le PDF")
         self.export_btn.setObjectName("exportBtn")
+        self.export_btn.setCursor(Qt.PointingHandCursor)
         self.export_btn.setMinimumWidth(200)
         self.export_btn.clicked.connect(self._on_export_clicked)
         export_icon = self._load_icon("pdf", 20)
@@ -202,6 +226,8 @@ class PdfExportView(QWidget):
 
         # Back button
         back_btn = QPushButton("Retour au Hub")
+        back_btn.setObjectName("hubButton")
+        back_btn.setCursor(Qt.PointingHandCursor)
         back_btn.clicked.connect(self.back_requested.emit)
         back_icon = self._load_icon("home", 20)
         if not back_icon.isNull():
@@ -228,10 +254,10 @@ class PdfExportView(QWidget):
         """Build source file display group."""
         group = QGroupBox("Fichier source")
         layout = QVBoxLayout()
-        layout.setContentsMargins(16, 20, 16, 16)
+        layout.setContentsMargins(Spacing.LG, Spacing.XL, Spacing.LG, Spacing.LG)
 
         self.source_label = QLabel("Aucun fichier NIST charge")
-        self.source_label.setStyleSheet("font-size: 14px;")
+        self.source_label.setStyleSheet(f"font-size: {Typography.SIZE_NORMAL}px;")
         layout.addWidget(self.source_label)
 
         group.setLayout(layout)
@@ -241,8 +267,8 @@ class PdfExportView(QWidget):
         """Build destination path input group."""
         group = QGroupBox("Destination")
         layout = QHBoxLayout()
-        layout.setContentsMargins(16, 20, 16, 16)
-        layout.setSpacing(12)
+        layout.setContentsMargins(Spacing.LG, Spacing.XL, Spacing.LG, Spacing.LG)
+        layout.setSpacing(Spacing.MD)
 
         self.output_input = QLineEdit()
         self.output_input.setPlaceholderText("Chemin du fichier PDF de sortie...")
@@ -259,8 +285,8 @@ class PdfExportView(QWidget):
         """Build information panel group."""
         group = QGroupBox("Organisation du releve")
         layout = QVBoxLayout()
-        layout.setContentsMargins(16, 20, 16, 16)
-        layout.setSpacing(8)
+        layout.setContentsMargins(Spacing.LG, Spacing.XL, Spacing.LG, Spacing.LG)
+        layout.setSpacing(Spacing.SM)
 
         info_items = [
             ("Main gauche", "Pouce, Index, Majeur, Annulaire, Auriculaire"),
@@ -284,7 +310,7 @@ class PdfExportView(QWidget):
             layout.addLayout(row)
 
         # Formats info
-        layout.addSpacing(12)
+        layout.addSpacing(Spacing.MD)
         formats_label = QLabel(
             "<i>Formats supportes : WSQ, JPEG, PNG, JPEG2000</i>"
         )
@@ -304,7 +330,7 @@ class PdfExportView(QWidget):
         self.current_file = path
         if path:
             name = Path(path).name
-            self.source_label.setText(f"📄  {name}")
+            self.source_label.setText(f"{name}")
             # Suggest output path
             suggested = str(Path(path).with_suffix(".pdf"))
             self.output_input.setText(suggested)

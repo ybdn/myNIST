@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, Dict
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QColor, QPalette, QIcon, QPixmap, QPainter
+from PyQt5.QtGui import QColor, QPalette, QIcon, QPixmap, QPainter, QFont
 from PyQt5.QtSvg import QSvgRenderer
 from PyQt5.QtWidgets import (
     QWidget,
@@ -13,9 +13,13 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QGridLayout,
+    QGraphicsDropShadowEffect,
 )
 
 from mynist.utils.constants import APP_NAME, APP_VERSION
+from mynist.utils.design_tokens import (
+    Colors, Typography, Spacing, Radius, Dimensions
+)
 
 
 class HomeView(QWidget):
@@ -41,7 +45,7 @@ class HomeView(QWidget):
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
 
     def _load_icon(self, name: str, size: int = 48) -> QIcon:
-        """Load SVG icon with current palette color."""
+        """Load SVG icon."""
         if name in self._icon_cache:
             return self._icon_cache[name]
 
@@ -61,74 +65,86 @@ class HomeView(QWidget):
         self._icon_cache[name] = icon
         return icon
 
-    def _apply_theme(self):
-        """Compute palette-aware stylesheet for light/dark compatibility."""
+    def _is_dark_mode(self) -> bool:
+        """Detect if system is in dark mode."""
         palette = self.palette()
         window = palette.color(QPalette.Window)
-        base = palette.color(QPalette.Base)
-        text = palette.color(QPalette.Text)
-        border = palette.color(QPalette.Mid)
-        highlight = palette.color(QPalette.Highlight)
+        return window.value() < 128
 
-        is_dark = window.value() < 96 or base.value() < 96
+    def _apply_theme(self):
+        """Apply NIST Studio design system theme."""
+        is_dark = self._is_dark_mode()
 
-        def tweak(color: QColor, factor: int) -> QColor:
-            return color.lighter(factor) if is_dark else color.darker(factor)
+        # Select colors based on theme
+        if is_dark:
+            window_bg = Colors.BG_DARK
+            surface_bg = Colors.SURFACE_DARK
+            text_primary = Colors.TEXT_PRIMARY_DARK
+            text_secondary = Colors.TEXT_SECONDARY
+            border = Colors.BORDER_DARK
+            card_hover_bg = "#353D47"
+        else:
+            window_bg = Colors.BG_LIGHT
+            surface_bg = Colors.SURFACE_LIGHT
+            text_primary = Colors.TEXT_PRIMARY_LIGHT
+            text_secondary = Colors.TEXT_SECONDARY
+            border = Colors.BORDER_SUBTLE
+            card_hover_bg = "#EEF1F5"
 
-        card_bg = tweak(base, 115)
-        card_hover = tweak(base, 130)
-        hover_border = highlight if highlight.alpha() > 0 else border
-        disabled_bg = tweak(base, 95)
-
-        self.setStyleSheet(
-            f"""
+        self.setStyleSheet(f"""
             #HomeRoot {{
-                background-color: {window.name()};
-                color: {text.name()};
+                background-color: {window_bg};
             }}
-            #HomeRoot QLabel {{
-                color: {text.name()};
-            }}
+
             #titleLabel {{
-                font-size: 28px;
-                font-weight: bold;
-                color: {text.name()};
+                font-size: {Typography.SIZE_TITLE}px;
+                font-weight: {Typography.WEIGHT_SEMIBOLD};
+                color: {Colors.PRIMARY if not is_dark else Colors.TEXT_PRIMARY_DARK};
             }}
+
             #subtitleLabel {{
-                font-size: 13px;
-                color: {border.name()};
+                font-size: {Typography.SIZE_NORMAL}px;
+                color: {text_secondary};
             }}
+
             #currentFileLabel {{
-                font-size: 12px;
-                padding: 10px 16px;
-                background: {tweak(base, 105).name()};
-                border: 1px solid {border.name()};
-                border-radius: 8px;
+                font-size: {Typography.SIZE_SMALL}px;
+                padding: {Spacing.SM}px {Spacing.LG}px;
+                background: {surface_bg};
+                border: 1px solid {border};
+                border-radius: {Radius.MD}px;
+                color: {text_primary};
             }}
+
             QPushButton#modeCard {{
                 text-align: center;
-                padding: 20px;
-                border: 1px solid {border.name()};
-                border-radius: 12px;
-                background: {card_bg.name()};
-                color: {text.name()};
-                font-size: 13px;
+                padding: {Spacing.CARD_PADDING}px;
+                border: 1px solid {border};
+                border-radius: {Radius.XL}px;
+                background: {surface_bg};
+                color: {text_primary};
+                font-size: {Typography.SIZE_NORMAL}px;
             }}
+
             QPushButton#modeCard:hover {{
-                border-color: {hover_border.name()};
-                background: {card_hover.name()};
+                border: 2px solid {Colors.ACCENT};
+                background: {card_hover_bg};
             }}
+
             QPushButton#modeCard:disabled {{
-                background: {disabled_bg.name()};
-                color: {border.name()};
+                background: {"#2A2E35" if is_dark else "#E8EAED"};
+                color: {text_secondary};
+                border-color: {border};
             }}
-            """
-        )
+        """)
 
     def _build_ui(self):
         layout = QVBoxLayout()
-        layout.setContentsMargins(48, 40, 48, 40)
-        layout.setSpacing(24)
+        layout.setContentsMargins(
+            Spacing.XXXL, Spacing.XXXL,
+            Spacing.XXXL, Spacing.XXXL
+        )
+        layout.setSpacing(Spacing.XXL)
 
         # Vertical centering
         layout.addStretch(1)
@@ -143,7 +159,7 @@ class HomeView(QWidget):
         self.current_file_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.current_file_label)
 
-        layout.addSpacing(8)
+        layout.addSpacing(Spacing.MD)
 
         # Mode cards (4 cards in grid)
         cards = self._build_cards()
@@ -158,7 +174,7 @@ class HomeView(QWidget):
         container = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(Spacing.SM)
         layout.setAlignment(Qt.AlignCenter)
 
         title = QLabel(APP_NAME)
@@ -180,7 +196,7 @@ class HomeView(QWidget):
         container.setMaximumWidth(800)
         grid = QGridLayout()
         grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(16)
+        grid.setSpacing(Spacing.LG)
 
         cards_data = [
             {
@@ -243,13 +259,14 @@ class HomeView(QWidget):
         button = QPushButton()
         button.setObjectName("modeCard")
         button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        button.setFixedHeight(140)
-        button.setMinimumWidth(280)
+        button.setFixedHeight(Dimensions.CARD_HEIGHT)
+        button.setMinimumWidth(Dimensions.CARD_MIN_WIDTH)
         button.setEnabled(enabled)
+        button.setCursor(Qt.PointingHandCursor if enabled else Qt.ForbiddenCursor)
 
-        icon = self._load_icon(icon_name, 48)
+        icon = self._load_icon(icon_name, Dimensions.CARD_HEIGHT // 3)
         button.setIcon(icon)
-        button.setIconSize(QSize(48, 48))
+        button.setIconSize(QSize(Dimensions.CARD_HEIGHT // 3, Dimensions.CARD_HEIGHT // 3))
 
         if not enabled:
             text = f"{title}\n\n{subtitle}\n\n(Bientot disponible)"
