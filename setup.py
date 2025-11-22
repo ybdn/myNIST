@@ -1,4 +1,4 @@
-"""Setup script for myNIST application."""
+"""Setup script for NIST Studio application."""
 
 from setuptools import setup, find_packages
 

@@ -1,4 +1,4 @@
-"""Configuration management for myNIST application."""
+"""Configuration management for NIST Studio application."""
 
 import json
 from pathlib import Path
@@ -38,10 +38,10 @@ class Config:
         Initialize configuration.
 
         Args:
-            config_path: Path to configuration file (default: ~/.mynist/config.json)
+            config_path: Path to configuration file (default: ~/.nist-studio/config.json)
         """
         if config_path is None:
-            config_dir = Path.home() / '.mynist'
+            config_dir = Path.home() / '.nist-studio'
             config_dir.mkdir(exist_ok=True)
             self.config_path = config_dir / 'config.json'
         else:

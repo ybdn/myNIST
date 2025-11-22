@@ -29,9 +29,41 @@ jobs:
                   pip install -r requirements.txt
                   pip install pyinstaller
 
+            # Generate proper multi-resolution ICO on Windows
+            - name: Generate Windows icon
+              if: runner.os == 'Windows'
+              run: |
+                  python -c "
+                  from PIL import Image
+                  import os
+
+                  icon_dir = 'mynist/resources/icons'
+                  sizes = [16, 32, 48, 64, 128, 256]
+                  images = []
+
+                  for size in sizes:
+                      png_path = f'{icon_dir}/appicon-nist-studio-{size}.png'
+                      if os.path.exists(png_path):
+                          img = Image.open(png_path)
+                      else:
+                          source = Image.open(f'{icon_dir}/appicon-nist-studio-256.png')
+                          img = source.resize((size, size), Image.LANCZOS)
+                      if img.mode != 'RGBA':
+                          img = img.convert('RGBA')
+                      images.append(img)
+
+                  images[0].save(
+                      f'{icon_dir}/appicon-nist-studio.ico',
+                      format='ICO',
+                      append_images=images[1:],
+                      sizes=[(img.width, img.height) for img in images]
+                  )
+                  print('Generated multi-resolution ICO')
+                  "
+
             - name: Build with PyInstaller
               run: |
-                  pyinstaller mynist.spec
+                  pyinstaller nist-studio.spec
 
             # Création du dossier release + renommage selon l'OS
             - name: Prepare release files (Linux/macOS)
@@ -39,9 +71,9 @@ jobs:
               run: |
                   mkdir -p release
                   if [ "${{ runner.os }}" = "macOS" ]; then
-                    mv dist/mynist release/mynist-macos
+                    mv dist/nist-studio release/nist-studio-macos
                   else
-                    mv dist/mynist release/mynist-linux
+                    mv dist/nist-studio release/nist-studio-linux
                   fi
 
             - name: Prepare release files (Windows)
@@ -49,13 +81,13 @@ jobs:
               shell: bash
               run: |
                   mkdir -p release
-                  mv dist/mynist.exe release/mynist-windows.exe
+                  mv dist/nist-studio.exe release/nist-studio-windows.exe
 
             # Artefacts visibles dans l'onglet Actions
             - name: Upload artifact
               uses: actions/upload-artifact@v4
               with:
-                  name: mynist-${{ matrix.os }}
+                  name: nist-studio-${{ matrix.os }}
                   path: release/
 
             # Upload automatique des binaires dans la Release si tag

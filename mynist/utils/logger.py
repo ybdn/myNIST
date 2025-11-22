@@ -1,11 +1,11 @@
-"""Logging configuration for myNIST application."""
+"""Logging configuration for NIST Studio application."""
 
 import logging
 import sys
 from pathlib import Path
 
 
-def setup_logger(name: str = "myNIST", level: int = logging.INFO) -> logging.Logger:
+def setup_logger(name: str = "NIST Studio", level: int = logging.INFO) -> logging.Logger:
     """
     Set up logger for the application.
 
@@ -49,4 +49,4 @@ def get_logger(name: str) -> logging.Logger:
     Returns:
         Logger instance
     """
-    return logging.getLogger(f"myNIST.{name}")
+    return logging.getLogger(f"NIST Studio.{name}")

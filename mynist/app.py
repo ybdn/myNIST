@@ -1,4 +1,4 @@
-"""Main application module."""
+"""Main application module for NIST Studio."""
 
 import sys
 from PyQt5.QtWidgets import QApplication
@@ -9,8 +9,8 @@ from mynist.utils.constants import APP_NAME
 logger = setup_logger(APP_NAME)
 
 
-class MyNISTApp:
-    """Main application class."""
+class NISTStudioApp:
+    """NIST Studio main application class."""
 
     def __init__(self):
         """Initialize application."""
