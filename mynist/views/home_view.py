@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Optional, Dict
 
 from PyQt5.QtCore import Qt, pyqtSignal, QSize
-from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QIcon, QPixmap, QPalette
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QGridLayout,
+    QApplication,
 )
 
 from mynist.utils.constants import APP_NAME, APP_VERSION
@@ -37,6 +38,23 @@ class HomeView(QWidget):
     def _get_icon_path(self, name: str) -> Path:
         """Return path to hub icon."""
         return Path(__file__).parent.parent / "resources" / "icons" / "hub" / f"{name}.svg"
+
+    def _is_dark_theme(self) -> bool:
+        """Detect if the OS is using dark theme."""
+        app = QApplication.instance()
+        if app is None:
+            return False
+        palette = app.palette()
+        window_color = palette.color(QPalette.Window)
+        return window_color.lightnessF() < 0.5
+
+    def _get_logo_path(self) -> Path:
+        """Return path to appropriate logo based on theme."""
+        icons_dir = Path(__file__).parent.parent / "resources" / "icons"
+        if self._is_dark_theme():
+            return icons_dir / "logo-nist-studio-white.png"
+        else:
+            return icons_dir / "logo-nist-studio-black.png"
 
     def _load_icon(self, name: str, size: int = 48) -> QIcon:
         """Load SVG icon with OS-appropriate color."""
@@ -81,21 +99,32 @@ class HomeView(QWidget):
         self.setLayout(layout)
 
     def _build_header(self) -> QWidget:
-        """Build header with app title."""
+        """Build header with app logo."""
         container = QWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(Spacing.SM)
+        layout.setSpacing(Spacing.MD)
         layout.setAlignment(Qt.AlignCenter)
 
-        title = QLabel(APP_NAME)
-        title.setStyleSheet(f"""
-            font-size: {Typography.SIZE_3XL}px;
-            font-weight: {Typography.WEIGHT_BOLD};
-        """)
-        title.setAlignment(Qt.AlignCenter)
-        layout.addWidget(title)
+        # Logo
+        logo_label = QLabel()
+        logo_path = self._get_logo_path()
+        if logo_path.exists():
+            pixmap = QPixmap(str(logo_path))
+            # Scale to reasonable size (max 400px width)
+            scaled = pixmap.scaledToWidth(400, Qt.SmoothTransformation)
+            logo_label.setPixmap(scaled)
+        else:
+            # Fallback to text if logo not found
+            logo_label.setText(APP_NAME)
+            logo_label.setStyleSheet(f"""
+                font-size: {Typography.SIZE_3XL}px;
+                font-weight: {Typography.WEIGHT_BOLD};
+            """)
+        logo_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(logo_label)
 
+        # Version subtitle
         subtitle = QLabel(f"v{APP_VERSION} - Suite d'outils biometriques")
         subtitle.setStyleSheet(f"font-size: {Typography.SIZE_MD}px;")
         subtitle.setAlignment(Qt.AlignCenter)
