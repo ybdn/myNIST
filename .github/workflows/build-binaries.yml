@@ -34,57 +34,91 @@ jobs:
             - name: Build NBIS (Linux)
               if: runner.os == 'Linux'
               continue-on-error: true
+              working-directory: ${{ github.workspace }}
               run: |
+                  set -e
                   sudo apt-get update
                   sudo apt-get install -y build-essential libpng-dev zlib1g-dev
 
                   # Download NBIS source
-                  curl -L -o nbis.zip "https://github.com/lessandro/nbis/archive/refs/heads/master.zip"
-                  unzip -q nbis.zip
-                  cd nbis-master
+                  git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
 
                   # Build with native NBIS build system
+                  cd nbis-src
                   mkdir -p install
                   chmod +x setup.sh
-                  ./setup.sh $(pwd)/install --without-X11 --STDLIBS
+
+                  # Fix GCC 10+ compatibility (multiple definition error)
+                  export CFLAGS="-fcommon -O2"
+                  export CDEFS="-D__NBISLE__ -fcommon"
+
+                  ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
                   make config
+
+                  # Patch the generated rules to add -fcommon
+                  sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
+
                   make -j$(nproc) it
+                  make install
 
                   # Copy binaries
-                  mkdir -p $GITHUB_WORKSPACE/nbis/bin
-                  cp install/bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "dwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
-                  cp install/bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "cwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
-                  cp install/bin/nfiq $GITHUB_WORKSPACE/nbis/bin/ || true
+                  cd ..
+                  mkdir -p nbis/bin
+                  cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/cwsq nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/nfiq nbis/bin/ 2>/dev/null || true
 
-                  echo "NBIS built successfully"
-                  ls -la $GITHUB_WORKSPACE/nbis/bin/
+                  # Fallback: find binaries if not in install dir
+                  if [ ! -f nbis/bin/dwsq ]; then
+                    find nbis-src -name "dwsq" -type f -perm /111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
+                  fi
+
+                  echo "NBIS build completed"
+                  ls -la nbis/bin/ || echo "No binaries found"
 
             - name: Build NBIS (macOS)
               if: runner.os == 'macOS'
               continue-on-error: true
+              working-directory: ${{ github.workspace }}
               run: |
+                  set -e
                   brew install libpng
 
                   # Download NBIS source
-                  curl -L -o nbis.zip "https://github.com/lessandro/nbis/archive/refs/heads/master.zip"
-                  unzip -q nbis.zip
-                  cd nbis-master
+                  git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
 
                   # Build with native NBIS build system
+                  cd nbis-src
                   mkdir -p install
                   chmod +x setup.sh
-                  ./setup.sh $(pwd)/install --without-X11 --STDLIBS
+
+                  # Fix GCC/Clang compatibility
+                  export CFLAGS="-fcommon -O2"
+                  export CDEFS="-D__NBISLE__ -fcommon"
+
+                  ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
                   make config
+
+                  # Patch the generated rules to add -fcommon (macOS sed syntax)
+                  sed -i '' 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
+
                   make -j$(sysctl -n hw.ncpu) it
+                  make install
 
                   # Copy binaries
-                  mkdir -p $GITHUB_WORKSPACE/nbis/bin
-                  cp install/bin/dwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "dwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
-                  cp install/bin/cwsq $GITHUB_WORKSPACE/nbis/bin/ || find . -name "cwsq" -type f -exec cp {} $GITHUB_WORKSPACE/nbis/bin/ \;
-                  cp install/bin/nfiq $GITHUB_WORKSPACE/nbis/bin/ || true
+                  cd ..
+                  mkdir -p nbis/bin
+                  cp nbis-src/install/bin/dwsq nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/cwsq nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/nfiq nbis/bin/ 2>/dev/null || true
 
-                  echo "NBIS built successfully"
-                  ls -la $GITHUB_WORKSPACE/nbis/bin/
+                  # Fallback: find binaries if not in install dir
+                  if [ ! -f nbis/bin/dwsq ]; then
+                    find nbis-src -name "dwsq" -type f -perm /111 -exec cp {} nbis/bin/ \; 2>/dev/null || true
+                  fi
+
+                  echo "NBIS build completed"
+                  ls -la nbis/bin/ || echo "No binaries found"
 
             - name: Build NBIS (Windows)
               if: runner.os == 'Windows'

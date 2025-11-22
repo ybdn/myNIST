@@ -130,8 +130,8 @@ def decode_wsq(data: bytes) -> Tuple[Optional[Image.Image], str]:
     WSQ est le format de compression standard pour les empreintes digitales,
     utilisé par le FBI et les forces de l'ordre internationales.
 
-    Stratégie : essaie d'abord le package Python wsq (fonctionne dans les builds),
-    puis fallback sur NBIS dwsq si disponible (plus robuste pour certains fichiers).
+    Stratégie : essaie d'abord NBIS dwsq (plus robuste, évite les segfaults),
+    puis fallback sur le package Python wsq.
 
     Args:
         data: Données binaires WSQ
@@ -143,18 +143,18 @@ def decode_wsq(data: bytes) -> Tuple[Optional[Image.Image], str]:
     """
     errors = []
 
-    # 1. Essayer le package Python wsq (fonctionne dans les builds packagés)
-    img, err = _decode_wsq_python(data)
-    if img:
-        return img, ""
-    if err:
-        errors.append(err)
-
-    # 2. Fallback sur NBIS dwsq (plus robuste, si installé)
+    # 1. Essayer NBIS dwsq d'abord (plus robuste, évite les segfaults du package Python)
     img, err = _decode_wsq_nbis(data)
     if img:
         return img, ""
-    if err:
+    if err and "non disponible" not in err:
+        errors.append(err)
+
+    # 2. Fallback sur le package Python wsq
+    img, err = _decode_wsq_python(data)
+    if img:
+        return img, ""
+    if err and "non disponible" not in err:
         errors.append(err)
 
     # Aucun décodeur n'a fonctionné
