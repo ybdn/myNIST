@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QSlider,
     QFileDialog,
+    QGraphicsView,
     QGraphicsScene,
     QGraphicsLineItem,
     QGraphicsPixmapItem,
