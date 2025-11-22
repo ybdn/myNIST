@@ -120,15 +120,62 @@ jobs:
                   echo "NBIS build completed"
                   ls -la nbis/bin/ || echo "No binaries found"
 
+            - name: Setup MSYS2 (Windows)
+              if: runner.os == 'Windows'
+              uses: msys2/setup-msys2@v2
+              with:
+                  msystem: MINGW64
+                  update: true
+                  install: >-
+                      mingw-w64-x86_64-gcc
+                      mingw-w64-x86_64-make
+                      mingw-w64-x86_64-libpng
+                      make
+                      git
+
             - name: Build NBIS (Windows)
               if: runner.os == 'Windows'
-              shell: pwsh
+              continue-on-error: true
+              shell: msys2 {0}
               run: |
-                  # On Windows, use pre-built wsq Python package (NBIS build requires Cygwin/MSYS2)
-                  # The wsq Python package already includes NBIS WSQ library
-                  Write-Host "Windows: Using wsq Python package for WSQ support"
-                  mkdir -Force nbis/bin | Out-Null
-                  echo "WSQ support provided by Python wsq package" > nbis/bin/README.txt
+                  set -e
+
+                  # Download NBIS source
+                  git clone --depth 1 https://github.com/lessandro/nbis.git nbis-src
+
+                  # Build with native NBIS build system
+                  cd nbis-src
+                  mkdir -p install
+                  chmod +x setup.sh
+
+                  # Fix GCC compatibility
+                  export CFLAGS="-fcommon -O2"
+                  export CDEFS="-D__NBISLE__ -fcommon"
+
+                  ./setup.sh "$(pwd)/install" --without-X11 --STDLIBS
+                  make config
+
+                  # Patch the generated rules to add -fcommon
+                  sed -i 's/-O2/-O2 -fcommon/g' p_rules.mak 2>/dev/null || true
+
+                  make -j$(nproc) it
+                  make install
+
+                  # Copy binaries
+                  cd ..
+                  mkdir -p nbis/bin
+                  cp nbis-src/install/bin/dwsq.exe nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/cwsq.exe nbis/bin/ 2>/dev/null || true
+                  cp nbis-src/install/bin/nfiq.exe nbis/bin/ 2>/dev/null || true
+
+                  # Fallback: find binaries
+                  if [ ! -f nbis/bin/dwsq.exe ]; then
+                    find nbis-src -name "dwsq.exe" -type f -exec cp {} nbis/bin/ \; 2>/dev/null || true
+                    find nbis-src -name "dwsq" -type f -exec cp {} nbis/bin/dwsq.exe \; 2>/dev/null || true
+                  fi
+
+                  echo "NBIS build completed"
+                  ls -la nbis/bin/ || echo "No binaries found"
 
             # Generate proper multi-resolution ICO on Windows
             - name: Generate Windows icon
