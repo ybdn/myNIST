@@ -54,12 +54,30 @@ def _find_dwsq() -> Optional[str]:
     if getattr(sys, 'frozen', False):
         # Application packagée
         bundle_dir = Path(sys._MEIPASS)  # type: ignore
+
         if sys.platform == 'win32':
-            bundled = bundle_dir / 'nbis' / 'bin' / 'dwsq.exe'
+            dwsq_name = 'dwsq.exe'
         else:
-            bundled = bundle_dir / 'nbis' / 'bin' / 'dwsq'
-        if bundled.exists():
-            return str(bundled)
+            dwsq_name = 'dwsq'
+
+        # Chemins possibles selon le type de packaging
+        possible_paths = [
+            bundle_dir / 'nbis' / 'bin' / dwsq_name,  # onefolder standard
+        ]
+
+        # Pour macOS .app bundle, les ressources peuvent être dans Contents/Resources
+        if sys.platform == 'darwin':
+            # Si _MEIPASS est dans Contents/Frameworks ou Contents/MacOS
+            contents_dir = bundle_dir.parent
+            if contents_dir.name in ('Frameworks', 'MacOS'):
+                resources_dir = contents_dir.parent / 'Resources'
+                possible_paths.append(resources_dir / 'nbis' / 'bin' / dwsq_name)
+            # Aussi essayer directement dans _MEIPASS (onefolder classique)
+            possible_paths.append(bundle_dir / 'nbis' / 'bin' / dwsq_name)
+
+        for path in possible_paths:
+            if path.exists():
+                return str(path)
 
     # 2. Chercher à côté du script (dev mode)
     script_dir = Path(__file__).parent.parent.parent
