@@ -1500,13 +1500,20 @@ class ComparisonView(QWidget):
 
     def _on_pan_toggled(self, checked: bool):
         if checked:
-            # Réinitialiser les modes pour restaurer ScrollHandDrag
-            self.left_view._reset_modes()
-            self.right_view._reset_modes()
-            self.left_view.setCursor(Qt.OpenHandCursor)
-            self.left_view.viewport().setCursor(Qt.OpenHandCursor)
-            self.right_view.setCursor(Qt.OpenHandCursor)
-            self.right_view.viewport().setCursor(Qt.OpenHandCursor)
+            # Désactiver les modes annotation/mesure
+            self.left_view.set_annotation_mode(False)
+            self.right_view.set_annotation_mode(False)
+            self.left_view.set_measurement_mode(False)
+            self.right_view.set_measurement_mode(False)
+            # Restaurer ScrollHandDrag seulement si overlay n'est pas actif
+            # (l'overlay utilise NoDrag pour permettre le déplacement du calque)
+            if not self.overlay_enabled:
+                self.left_view.setDragMode(QGraphicsView.ScrollHandDrag)
+                self.right_view.setDragMode(QGraphicsView.ScrollHandDrag)
+                self.left_view.setCursor(Qt.OpenHandCursor)
+                self.left_view.viewport().setCursor(Qt.OpenHandCursor)
+                self.right_view.setCursor(Qt.OpenHandCursor)
+                self.right_view.viewport().setCursor(Qt.OpenHandCursor)
             # Verrouiller les contrôles d'annotation
             self._set_annotation_controls_enabled(False)
 
