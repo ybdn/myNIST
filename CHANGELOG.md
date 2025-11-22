@@ -14,6 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cleaned up redundant documentation files
   - Updated index with new file paths
 - Rewrote README.md with professional formatting
+- Refactored `ComparisonView` into modular components:
+  - `comparison/annotatable_view.py`: Graphics components (AnnotatableView, AnnotationPoint, etc.)
+  - `comparison/image_loader.py`: Image loading from NIST/PDF/standard files
+  - `comparison/image_processor.py`: Image enhancements, rotation, flip
+  - `comparison/export.py`: Comparison export functions
 
 ### Added
 - CONTRIBUTING.md with development guidelines
