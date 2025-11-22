@@ -68,5 +68,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='mynist/resources/icons/mynist.ico',  # Application icon
+    icon='mynist/resources/icons/appicon-nist-studio.ico',  # Application icon
 )
