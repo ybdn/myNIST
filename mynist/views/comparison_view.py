@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QSlider,
     QFileDialog,
+    QDialog,
     QGraphicsView,
     QGraphicsScene,
     QGraphicsLineItem,
@@ -1499,10 +1500,9 @@ class ComparisonView(QWidget):
 
     def _on_pan_toggled(self, checked: bool):
         if checked:
-            self.left_view.set_annotation_mode(False)
-            self.right_view.set_annotation_mode(False)
-            self.left_view.set_measurement_mode(False)
-            self.right_view.set_measurement_mode(False)
+            # Réinitialiser les modes pour restaurer ScrollHandDrag
+            self.left_view._reset_modes()
+            self.right_view._reset_modes()
             self.left_view.setCursor(Qt.OpenHandCursor)
             self.left_view.viewport().setCursor(Qt.OpenHandCursor)
             self.right_view.setCursor(Qt.OpenHandCursor)
